@@ -26,6 +26,7 @@ export const LSRW_API_URL = getEnv("REACT_APP_LSRW_API_URL");
 export const SPEAKING_API_URL = getEnv("REACT_APP_SPEAKING_API_URL");
 export const READING_API_URL = getEnv("REACT_APP_READING_API_URL");
 export const WRITING_API_URL = getEnv("REACT_APP_WRITING_API_URL");
+export const ATTENDANCE_API_URL = getEnv("REACT_APP_ATTENDANCE_API_URL");
 // ----------------------
 // Authentication Functions
 // ----------------------
@@ -3886,127 +3887,148 @@ export const getBatchForAttendance = async (batchId, token) => {
 
 // Get attendance data for a batch
 export const getBatchAttendanceData = async (batchId, token) => {
-    try {
-        const response = await fetch(`http://localhost:3005/api/attendance/batch/${batchId}`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to fetch attendance data');
-        }
-        
-        return data;
-    } catch (error) {
-        throw new Error(`Get Batch Attendance Data Error: ${error.message}`);
+  try {
+    const response = await fetch(
+      `${ATTENDANCE_API_URL}/attendance/batch/${batchId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to fetch attendance data");
     }
+
+    return data;
+  } catch (error) {
+    throw new Error(`Get Batch Attendance Data Error: ${error.message}`);
+  }
 };
 
 // Get session records for attendance marking
-export const getSessionAttendanceRecords = async (batchId, sessionId, token) => {
-    try {
-        const response = await fetch(`http://localhost:3005/api/attendance/batch/${batchId}`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to fetch session records');
-        }
-        
-        // Find the specific session
-        const session = data.data.sessions.find(s => s.id === sessionId);
-        if (!session) {
-            throw new Error('Session not found');
-        }
-        
-        return {
-            success: true,
-            session: session,
-            records: session.records || []
-        };
-    } catch (error) {
-        throw new Error(`Get Session Records Error: ${error.message}`);
+export const getSessionAttendanceRecords = async (
+  batchId,
+  sessionId,
+  token
+) => {
+  try {
+    const response = await fetch(
+      `${ATTENDANCE_API_URL}/attendance/batch/${batchId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to fetch session records");
     }
+
+    const session = data?.data?.sessions?.find((s) => s.id === sessionId);
+
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
+    return {
+      success: true,
+      session,
+      records: session.records || [],
+    };
+  } catch (error) {
+    throw new Error(`Get Session Records Error: ${error.message}`);
+  }
 };
 
 // Create a new attendance session
 export const createAttendanceSession = async (sessionData, token) => {
-    try {
-        const response = await fetch('http://localhost:3005/api/attendance/sessions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify(sessionData)
-        });
+  try {
+    const response = await fetch(`${ATTENDANCE_API_URL}/attendance/sessions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(sessionData),
+    });
 
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to create session');
-        }
-        
-        return data;
-    } catch (error) {
-        throw new Error(`Create Attendance Session Error: ${error.message}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to create session");
     }
+
+    return data;
+  } catch (error) {
+    throw new Error(`Create Attendance Session Error: ${error.message}`);
+  }
 };
+
 
 // Update attendance record status
 export const updateAttendanceRecord = async (recordId, status, token) => {
-    try {
-        const response = await fetch(`http://localhost:3005/api/attendance/records/${recordId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({ status })
-        });
+  try {
+    const response = await fetch(
+      `${ATTENDANCE_API_URL}/attendance/records/${recordId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      }
+    );
 
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to update attendance record');
-        }
-        
-        return data;
-    } catch (error) {
-        throw new Error(`Update Attendance Record Error: ${error.message}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to update attendance record");
     }
+
+    return data;
+  } catch (error) {
+    throw new Error(`Update Attendance Record Error: ${error.message}`);
+  }
 };
+
 
 // Bulk update attendance records
 export const bulkUpdateAttendanceRecords = async (records, token) => {
-    try {
-        const updatePromises = records.map(record => 
-            updateAttendanceRecord(record.id, record.status, token)
-        );
+  try {
+    const response = await fetch(
+      `${ATTENDANCE_API_URL}/attendance/records/bulk-update`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ records }),
+      }
+    );
 
-        const results = await Promise.all(updatePromises);
-        const errors = results.filter(result => !result.success);
+    const data = await response.json();
 
-        if (errors.length > 0) {
-            throw new Error('Some records failed to update');
-        }
-
-        return { success: true, message: 'Attendance saved successfully!' };
-    } catch (error) {
-        throw new Error(`Bulk Update Attendance Records Error: ${error.message}`);
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to save attendance");
     }
+
+    return data;
+  } catch (error) {
+    throw new Error(`Bulk Update Attendance Records Error: ${error.message}`);
+  }
 };
+
 
 // ----------------------
 // Event Management Functions
