@@ -24,7 +24,6 @@ const ManageBatchesPage = () => {
   const [startingBatch, setStartingBatch] = useState(null);
   const [completingBatch, setCompletingBatch] = useState(null);
   const [mergeGroups, setMergeGroups] = useState([]);
-  const [mergedBatchMap, setMergedBatchMap] = useState({});
   const [enrolledStudentsModal, setEnrolledStudentsModal] = useState({ isOpen: false, batchId: null, batchName: null });
   const [startBatchModal, setStartBatchModal] = useState({ isOpen: false, batchId: null, batchName: '' });
 

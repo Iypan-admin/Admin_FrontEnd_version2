@@ -29,7 +29,6 @@ const StudentsPage = () => {
     .filter(name => name && name.trim() !== "")
     .sort()
   )];
-  const uniqueStatuses = [...new Set(students.map(student => student.status))];
 
   // Fetch students data
   const fetchStudents = useCallback(async () => {

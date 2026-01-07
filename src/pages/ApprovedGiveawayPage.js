@@ -62,10 +62,6 @@ const GiveawayApprovalPage = () => {
         loadPendingGiveaways();
     }, []);
 
-    const formatStatus = (status) => {
-        if (status === "success") return "Pending Approval";
-        return status?.charAt(0).toUpperCase() + status?.slice(1);
-    };
 
     // Filter & search logic
     const filteredGiveaways = giveaways.filter((g) => {

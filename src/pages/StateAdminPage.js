@@ -58,16 +58,15 @@ function StateAdminPage() {
         ]);
         
         const centers = centersResponse.data || [];
-        const requests = requestsResponse.data || [];
 
         setStats({
           totalCenters: centers.length,
           activeCenters: centers.filter(center => center.center_admin).length,
           totalAdmins: centers.filter(center => center.center_admin).length,
-          pendingRequests: requests.filter(req => req.status === 'pending').length
+          pendingRequests: (requestsResponse.data || []).filter(req => req.status === 'pending').length
         });
         
-        setRequests(requests);
+        setRequests(requestsResponse.data || []);
       } catch (error) {
         console.error("Error fetching stats:", error);
         
@@ -99,7 +98,6 @@ function StateAdminPage() {
           getMyCenterRequests(token)
         ]);
         
-        const centers = centersResponse.data || [];
         const requests = requestsResponse.data || [];
 
         setStats(prev => ({

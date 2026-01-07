@@ -142,16 +142,14 @@ const ResourceManagerPage = () => {
                 return;
             }
 
-            let listeningCount = 0;
-            let speakingCount = 0;
-            let readingCount = 0;
-            let writingCount = 0;
-
             // Fetch resources for each course and count them
             const BATCH_SIZE = 5; // Reduced batch size for better reliability
+            const courseCounts = [];
+            
             for (let i = 0; i < courses.length; i += BATCH_SIZE) {
                 const batch = courses.slice(i, i + BATCH_SIZE);
                 const batchPromises = batch.map(async (course) => {
+                    const counts = { listening: 0, speaking: 0, reading: 0, writing: 0 };
                     try {
                         // Fetch Listening resources - Count unique sessions (grouped by lsrw_id)
                         const listeningRes = await Promise.race([
@@ -171,10 +169,9 @@ const ResourceManagerPage = () => {
                                     sessionMap.set(sessionKey, true);
                                 }
                             });
-                            const sessionCount = sessionMap.size;
-                            listeningCount += sessionCount;
-                            if (sessionCount > 0) {
-                                console.log(`Course ${course.course_name}: ${sessionCount} listening sessions`);
+                            counts.listening = sessionMap.size;
+                            if (counts.listening > 0) {
+                                console.log(`Course ${course.course_name}: ${counts.listening} listening sessions`);
                             }
                         }
 
@@ -196,10 +193,9 @@ const ResourceManagerPage = () => {
                                     sessionMap.set(sessionKey, true);
                                 }
                             });
-                            const sessionCount = sessionMap.size;
-                            speakingCount += sessionCount;
-                            if (sessionCount > 0) {
-                                console.log(`Course ${course.course_name}: ${sessionCount} speaking sessions`);
+                            counts.speaking = sessionMap.size;
+                            if (counts.speaking > 0) {
+                                console.log(`Course ${course.course_name}: ${counts.speaking} speaking sessions`);
                             }
                         }
 
@@ -214,10 +210,9 @@ const ResourceManagerPage = () => {
                         
                         if (readingRes && readingRes.success && Array.isArray(readingRes.data)) {
                             // Direct count - same as LSRWFileViewPage
-                            const itemCount = readingRes.data.length;
-                            readingCount += itemCount;
-                            if (itemCount > 0) {
-                                console.log(`Course ${course.course_name}: ${itemCount} reading resources`);
+                            counts.reading = readingRes.data.length;
+                            if (counts.reading > 0) {
+                                console.log(`Course ${course.course_name}: ${counts.reading} reading resources`);
                             }
                         }
 
@@ -240,19 +235,26 @@ const ResourceManagerPage = () => {
                                     sessionMap.set(sessionKey, true);
                                 }
                             });
-                            const sessionCount = sessionMap.size;
-                            writingCount += sessionCount;
-                            if (sessionCount > 0) {
-                                console.log(`Course ${course.course_name}: ${sessionCount} writing sessions`);
+                            counts.writing = sessionMap.size;
+                            if (counts.writing > 0) {
+                                console.log(`Course ${course.course_name}: ${counts.writing} writing sessions`);
                             }
                         }
                     } catch (err) {
                         console.warn(`Error fetching resources for course ${course.course_name || course.id}:`, err);
                     }
+                    return counts;
                 });
 
-                await Promise.all(batchPromises);
+                const batchResults = await Promise.all(batchPromises);
+                courseCounts.push(...batchResults);
             }
+
+            // Sum up all counts
+            const listeningCount = courseCounts.reduce((sum, c) => sum + c.listening, 0);
+            const speakingCount = courseCounts.reduce((sum, c) => sum + c.speaking, 0);
+            const readingCount = courseCounts.reduce((sum, c) => sum + c.reading, 0);
+            const writingCount = courseCounts.reduce((sum, c) => sum + c.writing, 0);
 
             console.log("Final counts - Listening:", listeningCount, "Speaking:", speakingCount, "Reading:", readingCount, "Writing:", writingCount);
             

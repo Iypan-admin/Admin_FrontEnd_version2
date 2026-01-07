@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import Navbar from '../components/Navbar';
-import { getAllCourses, uploadLSRWContent, getLSRWByCourse, uploadSpeakingMaterial, uploadReadingMaterial, extractReadingContent, uploadWritingTask, getWritingByCourse, getSpeakingByCourse, getReadingByCourse } from '../services/Api';
-import { Upload, FileAudio, FileText, BookOpen, Loader2, CheckCircle, XCircle, AlertCircle, Search, X, Headphones, Mic, Book, PenTool, Eye, Download, Trash2, File, ExternalLink, ChevronDown, ChevronUp, Image } from 'lucide-react';
+import { getAllCourses, uploadLSRWContent, getLSRWByCourse, uploadSpeakingMaterial, uploadReadingMaterial, extractReadingContent, uploadWritingTask, getWritingByCourse } from '../services/Api';
+import { Upload, FileAudio, FileText, Loader2, CheckCircle, XCircle, Search, X, Headphones, Mic, Book, PenTool, ExternalLink, Image } from 'lucide-react';
 
 function LSRWUploadPage() {
   const { courseId, module } = useParams();
@@ -62,6 +62,7 @@ function LSRWUploadPage() {
 
   useEffect(() => {
     fetchCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update active tab when route changes
@@ -72,6 +73,7 @@ function LSRWUploadPage() {
                 !location.pathname.includes('/lsrw-upload/speaking') && 
                 !location.pathname.includes('/lsrw-upload/reading') && 
                 !location.pathname.includes('/lsrw-upload/writing'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   // Set language and course when courseId is provided via URL
@@ -86,7 +88,8 @@ function LSRWUploadPage() {
         fetchLSRWContent(courseId);
       }
     }
-  }, [courseId, courses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, courses, selectedCourses]); 
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -190,48 +193,13 @@ function LSRWUploadPage() {
     }
 
     return () => clearTimeout(timer);
-  }, [activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedCourses]);
 
   // Get active tab configuration
   const activeTabConfig = lsrwTabs.find(tab => tab.id === activeTab) || lsrwTabs[0];
 
 
-  // Handle file preview
-  const handlePreview = (fileUrl, fileName, fileType, textContent = null) => {
-    // For audio files, play inline without opening modal
-    if (fileType === 'audio' || (fileUrl && isAudioFile(fileUrl))) {
-      setPlayingAudio(playingAudio === fileUrl ? null : fileUrl);
-      return;
-    }
-    // For other files, open modal
-    setPreviewFile({ url: fileUrl, name: fileName, type: fileType, textContent: textContent });
-  };
-
-  // Handle file download
-  const handleDownload = (fileUrl, fileName) => {
-    const link = document.createElement('a');
-    link.href = fileUrl;
-    link.download = fileName || 'file';
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Handle file delete (soft delete - would need API endpoint)
-  const handleDelete = async (fileId, moduleType, courseId) => {
-    if (!window.confirm('Are you sure you want to delete this file?')) return;
-    
-    try {
-      const token = localStorage.getItem('token');
-      // TODO: Implement delete API endpoint
-      // For now, just show a message
-      alert('Delete functionality will be implemented with API endpoint');
-    } catch (error) {
-      console.error('Error deleting file:', error);
-      setError('Failed to delete file');
-    }
-  };
 
   // Get file name from URL
   const getFileName = (url) => {

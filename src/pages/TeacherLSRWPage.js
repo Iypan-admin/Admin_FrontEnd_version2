@@ -45,6 +45,7 @@ function TeacherLSRWPage() {
       fetchBatchDetails();
       setLoadingBatches(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
 
   // Fetch batch details when batchId is in URL
@@ -142,6 +143,7 @@ function TeacherLSRWPage() {
     if (selectedBatch && selectedLessonForSubmissions) {
       fetchStudentSubmissions(selectedLessonForSubmissions);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatch, selectedLessonForSubmissions]);
 
   const fetchTeacherBatches = async () => {
@@ -589,8 +591,8 @@ function TeacherLSRWPage() {
     const questionPatterns = [
       /Q(\d+)\./i,                    // Q1.
       /^(\d+)\.\s+[A-Z]/m,            // 1. Question text
-      /Question\s+(\d+)[:\.]/i,       // Question 1: or Question 1.
-      /MCQ\s+(\d+)[:\.]/i,            // MCQ 1: or MCQ 1.
+      /Question\s+(\d+)[:.]/i,       // Question 1: or Question 1.
+      /MCQ\s+(\d+)[:.]/i,            // MCQ 1: or MCQ 1.
       /^(\d+)\)/m,                    // 1) Question text
       /MCQ Questions?:/i,              // MCQ Questions: or MCQ Question:
       /Questions?:/i,                  // Questions: or Question:
@@ -1861,7 +1863,7 @@ function TeacherLSRWPage() {
                           }
                           // For reading: check if feedback exists (text, marks, or audio)
                           if (activeTab === 'reading') {
-                            const hasFeedback = submission.feedback && (submission.feedback.remarks || submission.feedback.marks !== null && submission.feedback.marks !== undefined || submission.feedback.audio_url);
+                            const hasFeedback = submission.feedback && (submission.feedback.remarks || (submission.feedback.marks !== null && submission.feedback.marks !== undefined) || submission.feedback.audio_url);
                             return hasFeedback ? 'border-green-300 bg-green-50' : 'border-yellow-300 bg-yellow-50';
                           }
                           // For writing: check feedback status
@@ -1950,7 +1952,7 @@ function TeacherLSRWPage() {
                                 }
                                 // For reading: check if feedback exists (text, marks, or audio)
                                 else if (activeTab === 'reading') {
-                                  const hasFeedback = submission.feedback && (submission.feedback.remarks || submission.feedback.marks !== null && submission.feedback.marks !== undefined || submission.feedback.audio_url);
+                                  const hasFeedback = submission.feedback && (submission.feedback.remarks || (submission.feedback.marks !== null && submission.feedback.marks !== undefined) || submission.feedback.audio_url);
                                   if (hasFeedback) {
                                     return (
                                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">

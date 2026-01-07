@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import {
   getMyTutorInfo,
@@ -10,7 +9,6 @@ import {
 } from "../services/Api";
 
 function TutorInfoPage() {
-  const navigate = useNavigate();
   const [tutorInfo, setTutorInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -70,7 +68,6 @@ function TutorInfoPage() {
   };
 
   const profileCompletion = calculateProfileCompletion(tutorInfo);
-  const lastUpdated = formatLastUpdated(tutorInfo);
 
   useEffect(() => {
     fetchTutorInfo();

@@ -11,7 +11,6 @@ import { getMyTeacherId } from "../services/Api";
 
 const TeacherDemoClassesPage = () => {
     const token = localStorage.getItem("token");
-    const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
     const [demoBatches, setDemoBatches] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);

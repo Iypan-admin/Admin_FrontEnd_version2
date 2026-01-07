@@ -191,29 +191,6 @@ function LiveClassPage() {
     document.body.removeChild(link);
   };
 
-  // Get available months and years from history classes
-  const getAvailableMonthsAndYears = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const historyClasses = allClasses.filter(c => c.date < today);
-    
-    const monthYearMap = new Map();
-    historyClasses.forEach(classItem => {
-      if (classItem.date) {
-        const date = new Date(classItem.date);
-        const month = date.toLocaleString('default', { month: 'long' });
-        const year = date.getFullYear().toString();
-        const key = `${month}_${year}`;
-        monthYearMap.set(key, { month, year });
-      }
-    });
-
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                   'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    const years = Array.from(new Set(Array.from(monthYearMap.values()).map(m => m.year))).sort((a, b) => b - a);
-    
-    return { months, years, monthYearMap: Array.from(monthYearMap.values()) };
-  };
 
   // Filter classes by month and year
   const filterClassesByMonth = (classes, month, year) => {

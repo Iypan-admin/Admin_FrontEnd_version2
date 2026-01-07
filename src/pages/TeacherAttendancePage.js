@@ -15,7 +15,6 @@ const TeacherAttendancePage = () => {
     const [batch, setBatch] = useState(null);
     const [sessions, setSessions] = useState([]);
     const [selectedSession, setSelectedSession] = useState(null);
-    const [attendanceRecords, setAttendanceRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -33,6 +32,7 @@ const TeacherAttendancePage = () => {
     });
 
     // Attendance marking state
+    const [attendanceRecords, setAttendanceRecords] = useState([]);
     const [localRecords, setLocalRecords] = useState([]);
 
     useEffect(() => {
@@ -40,6 +40,7 @@ const TeacherAttendancePage = () => {
             fetchBatchDetails();
             fetchAttendanceData();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [batchId]);
 
     const fetchBatchDetails = async () => {
@@ -174,15 +175,6 @@ const TeacherAttendancePage = () => {
         }
     };
 
-    const getStatusIcon = (status) => {
-        switch (status) {
-            case 'present': return <CheckCircle className="w-4 h-4" />;
-            case 'absent': return <XCircle className="w-4 h-4" />;
-            case 'late': return <Clock className="w-4 h-4" />;
-            case 'excused': return <AlertCircle className="w-4 h-4" />;
-            default: return <Clock className="w-4 h-4" />;
-        }
-    };
 
     if (loading) {
         return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { getAllCourses, getLSRWByCourse, getWritingByCourse, getSpeakingByCourse, getReadingByCourse, updateSessionNumbers, deleteListeningSession, deleteSpeakingSession, deleteReadingSession, deleteWritingSession } from '../services/Api';
 import { FolderOpen, Loader2, Search, X, Headphones, Mic, Book, PenTool, Eye, Download, Trash2, FileText, FileAudio, Image, ChevronDown, ChevronUp, ExternalLink, GripVertical } from 'lucide-react';
@@ -37,6 +37,7 @@ function LSRWFileViewPage() {
     if (!loading && courses.length > 0 && !filesFetched) {
       fetchAllFiles();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, courses.length, filesFetched]);
 
   const fetchCourses = async () => {
