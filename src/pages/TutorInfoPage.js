@@ -41,32 +41,6 @@ function TutorInfoPage() {
     return Math.round((filledFields.length / fields.length) * 100);
   };
 
-  // Format last updated time
-  const formatLastUpdated = (info) => {
-    if (!info || !info.updated_at) return 'Never';
-    
-    try {
-      const updatedDate = new Date(info.updated_at);
-      const now = new Date();
-      const diffInSeconds = Math.floor((now - updatedDate) / 1000);
-      
-      if (diffInSeconds < 60) return 'Just now';
-      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`;
-      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hour${Math.floor(diffInSeconds / 3600) > 1 ? 's' : ''} ago`;
-      if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} day${Math.floor(diffInSeconds / 86400) > 1 ? 's' : ''} ago`;
-      
-      return updatedDate.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (e) {
-      return 'Recently';
-    }
-  };
-
   const profileCompletion = calculateProfileCompletion(tutorInfo);
 
   useEffect(() => {

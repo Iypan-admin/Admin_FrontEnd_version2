@@ -56,7 +56,6 @@ function LSRWUploadPage() {
   const [loading, setLoading] = useState(true);
   const [isTransitioning, setIsTransitioning] = useState(false); // For tab transition animation
   const [previewFile, setPreviewFile] = useState(null); // { url, name, type }
-  const [playingAudio, setPlayingAudio] = useState(null); // Track which audio is currently playing
   const [showUploadPreview, setShowUploadPreview] = useState(false); // Preview modal for upload confirmation
   const [uploadSuccessInModal, setUploadSuccessInModal] = useState(false); // Track success in preview modal
 
@@ -221,11 +220,6 @@ function LSRWUploadPage() {
     return getFileExtension(url) === 'pdf';
   };
 
-  // Check if file is audio
-  const isAudioFile = (url) => {
-    const ext = getFileExtension(url);
-    return ['mp3', 'wav', 'm4a', 'ogg'].includes(ext);
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

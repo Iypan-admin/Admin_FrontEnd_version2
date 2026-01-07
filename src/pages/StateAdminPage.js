@@ -18,7 +18,6 @@ function StateAdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requests, setRequests] = useState([]);
 
   // Scroll to calendar function
   const scrollToCalendar = () => {
@@ -52,11 +51,12 @@ function StateAdminPage() {
           console.error("Error decoding token:", e);
         }
 
-        const [centersResponse, requestsResponse] = await Promise.all([
+        const [, requestsResponse] = await Promise.all([
           getCentersForStateAdmin(token),
           getMyCenterRequests(token)
         ]);
         
+        const centersResponse = await getCentersForStateAdmin(token);
         const centers = centersResponse.data || [];
 
         setStats({
@@ -66,7 +66,6 @@ function StateAdminPage() {
           pendingRequests: (requestsResponse.data || []).filter(req => req.status === 'pending').length
         });
         
-        setRequests(requestsResponse.data || []);
       } catch (error) {
         console.error("Error fetching stats:", error);
         
@@ -93,7 +92,7 @@ function StateAdminPage() {
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem("token");
-        const [centersResponse, requestsResponse] = await Promise.all([
+        const [, requestsResponse] = await Promise.all([
           getCentersForStateAdmin(token),
           getMyCenterRequests(token)
         ]);
@@ -105,7 +104,6 @@ function StateAdminPage() {
           pendingRequests: requests.filter(req => req.status === 'pending').length
         }));
         
-        setRequests(requests);
       } catch (error) {
         console.error("Error refreshing data:", error);
       }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { useParams } from 'react-router-dom';
-import { Calendar, Users, CheckCircle, XCircle, Clock, AlertCircle, Plus, Save, Eye, User } from 'lucide-react';
+import { Calendar, Users, XCircle, AlertCircle, Plus, Save, Eye, User } from 'lucide-react';
 import { 
     getBatchForAttendance, 
     getBatchAttendanceData, 
@@ -32,7 +32,6 @@ const TeacherAttendancePage = () => {
     });
 
     // Attendance marking state
-    const [attendanceRecords, setAttendanceRecords] = useState([]);
     const [localRecords, setLocalRecords] = useState([]);
 
     useEffect(() => {
@@ -97,7 +96,6 @@ const TeacherAttendancePage = () => {
             if (data.success) {
                 console.log('🔍 Selected session:', data.session);
                 console.log('🔍 Session records:', data.records);
-                setAttendanceRecords(data.records);
                 setLocalRecords(data.records.map(record => ({ ...record })));
                 setSelectedSession(data.session);
             } else {
