@@ -1,36 +1,31 @@
-
 // api.js
 
-// Define different backend URLs for each service using environment variables
-// Development URLs (fallback if env variables are not set)
-// Production URLs:
-// REACT_APP_AUTH_API_URL = "https://auth.iypan.com"
-// REACT_APP_USER_API_URL = "https://role.iypan.com"
-// REACT_APP_LIST_API_URL = "https://listing.iypan.com/api"
-// REACT_APP_ASSIGN_API_URL = "https://assign.iypan.com"
-// REACT_APP_FINANCE_API_URL = "https://financial.iypan.com/api/financial"
-// REACT_APP_BATCHES_URL = "https://academic.iypan.com/api/batches"
-// REACT_APP_GMEETS_API_URL = "https://academic.iypan.com/api/gmeets"
-// REACT_APP_NOTES_API_URL = "https://academic.iypan.com/api/notes"
-// REACT_APP_COURSES_API_URL = "https://academic.iypan.com/api/courses/"
-// REACT_APP_CHAT_API_URL = "https://chat.iypan.com"
+const getEnv = (key) => {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing ENV variable: ${key}`);
+  }
+  return value;
+};
 
-const AUTH_API_URL = process.env.REACT_APP_AUTH_API_URL || "http://localhost:3000";
-const USER_API_URL = process.env.REACT_APP_USER_API_URL || "http://localhost:3001";
-const LIST_API_URL = process.env.REACT_APP_LIST_API_URL || "http://localhost:3008/api";
-const FINANCE_API_URL = process.env.REACT_APP_FINANCE_API_URL || "http://localhost:3007/api/financial";
-const ASSIGN_API_URL = process.env.REACT_APP_ASSIGN_API_URL || "http://localhost:3002";
-const BATCHES_URL = process.env.REACT_APP_BATCHES_URL || "http://localhost:3005/api/batches";
-const GMEETS_API_URL = process.env.REACT_APP_GMEETS_API_URL || "http://localhost:3005/api/gmeets";
-const NOTES_API_URL = process.env.REACT_APP_NOTES_API_URL || "http://localhost:3005/api/notes";
-const COURSES_API_URL = process.env.REACT_APP_COURSES_API_URL || "http://localhost:3005/api/courses/";
-const COURSE_FEES_API_URL = process.env.REACT_APP_COURSE_FEES_API_URL || "http://localhost:3005/api/course-fees";
-const EVENTS_API_URL = process.env.REACT_APP_EVENTS_API_URL || "http://localhost:3005/api/events";
-const LSRW_API_URL = process.env.REACT_APP_LSRW_API_URL || "http://localhost:3005/api/lsrw";
-const SPEAKING_API_URL = process.env.REACT_APP_SPEAKING_API_URL || "http://localhost:3005/api/speaking";
-const READING_API_URL = process.env.REACT_APP_READING_API_URL || "http://localhost:3005/api/reading";
-const WRITING_API_URL = process.env.REACT_APP_WRITING_API_URL || "http://localhost:3005/api/writing";
-const CHAT_API_URL = process.env.REACT_APP_CHAT_API_URL || "http://localhost:3030";
+export const AUTH_API_URL = getEnv("REACT_APP_AUTH_API_URL");
+export const USER_API_URL = getEnv("REACT_APP_USER_API_URL");
+export const LIST_API_URL = getEnv("REACT_APP_LIST_API_URL");
+export const ASSIGN_API_URL = getEnv("REACT_APP_ASSIGN_API_URL");
+export const FINANCE_API_URL = getEnv("REACT_APP_FINANCE_API_URL");
+export const CHAT_API_URL = getEnv("REACT_APP_CHAT_API_URL");
+
+export const BATCHES_URL = getEnv("REACT_APP_BATCHES_URL");
+export const COURSES_API_URL = getEnv("REACT_APP_COURSES_API_URL");
+export const COURSE_FEES_API_URL = getEnv("REACT_APP_COURSE_FEES_API_URL");
+export const EVENTS_API_URL = getEnv("REACT_APP_EVENTS_API_URL");
+export const GMEETS_API_URL = getEnv("REACT_APP_GMEETS_API_URL");
+export const NOTES_API_URL = getEnv("REACT_APP_NOTES_API_URL");
+
+export const LSRW_API_URL = getEnv("REACT_APP_LSRW_API_URL");
+export const SPEAKING_API_URL = getEnv("REACT_APP_SPEAKING_API_URL");
+export const READING_API_URL = getEnv("REACT_APP_READING_API_URL");
+export const WRITING_API_URL = getEnv("REACT_APP_WRITING_API_URL");
 // ----------------------
 // Authentication Functions
 // ----------------------
