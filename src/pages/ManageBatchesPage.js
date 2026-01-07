@@ -11,6 +11,8 @@ import CreateBatchModal from "../components/CreateBatchModal";
 import BatchMergeModal from "../components/BatchMergeModal";
 import EnrolledStudentsModal from "../components/EnrolledStudentsModal";
 import StartBatchModal from "../components/StartBatchModal";
+import { BATCHES_URL } from "../services/Api";
+
 
 const ManageBatchesPage = () => {
   const [batches, setBatches] = useState([]);
@@ -163,17 +165,18 @@ const ManageBatchesPage = () => {
       setStartingBatch(startBatchModal.batchId);
       const token = localStorage.getItem("token");
 
-      const response = await fetch(`http://localhost:3005/api/batches/${startBatchModal.batchId}/start`, {
-        method: 'POST',
+      fetch(`${BATCHES_URL}/${startBatchModal.batchId}/start`, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           start_date: new Date().toISOString(),
-          total_sessions: totalSessions
-        })
+          total_sessions: totalSessions,
+        }),
       });
+
 
       const data = await response.json();
 
@@ -199,15 +202,15 @@ const ManageBatchesPage = () => {
       setCompletingBatch(batchId);
       const token = localStorage.getItem("token");
 
-      const response = await fetch(`http://localhost:3005/api/batches/${batchId}/complete`, {
-        method: 'POST',
+      fetch(`${BATCHES_URL}/${batchId}/complete`, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          end_date: new Date().toISOString()
-        })
+          end_date: new Date().toISOString(),
+        }),
       });
 
       const data = await response.json();
