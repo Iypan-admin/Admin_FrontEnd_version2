@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Calendar, Clock, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Bell, Calendar, Clock, X } from 'lucide-react';
 import { getUpcomingEvents } from '../services/Api';
 
 const CalendarNotificationBar = ({ onScrollToCalendar }) => {

@@ -13,6 +13,7 @@ function AcademicSubTutorRequestsPage() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   const load = async () => {

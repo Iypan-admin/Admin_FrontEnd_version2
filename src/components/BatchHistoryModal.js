@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Calendar, MapPin, Users, BookOpen, CheckCircle } from 'lucide-react';
+import { X, Clock, Calendar, MapPin, BookOpen } from 'lucide-react';
 import { getStudentBatchHistory } from '../services/Api';
 
 const BatchHistoryModal = ({ isOpen, onClose, student }) => {
@@ -11,6 +11,7 @@ const BatchHistoryModal = ({ isOpen, onClose, student }) => {
     if (isOpen && student) {
       fetchBatchHistory();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, student]);
 
   const fetchBatchHistory = async () => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { createChatMessage, fetchChatMessages, deleteChatMessage, updateChatMessage } from '../services/Api';
-import { MessageCircle, Send, Edit3, Trash2, Clock, User, Bot, Loader2 } from 'lucide-react';
+import { MessageCircle, Send, Edit3, Trash2, Clock, User, Bot } from 'lucide-react';
 
 function BatchChatsPage() {
   const { batchId } = useParams();

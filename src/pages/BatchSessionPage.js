@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Calendar, Clock, Video, BookOpen, AlertCircle, ArrowLeft, Edit, Trash2, Save, Upload } from 'lucide-react';
+import { Video, BookOpen, AlertCircle, ArrowLeft, Edit, Trash2, Save, Upload } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { getBatches, getBatchById, getGMeetsByBatch, createGMeet, updateGMeet, deleteGMeet } from '../services/Api';
 
@@ -31,6 +31,7 @@ function BatchSessionPage() {
       fetchBatchDetails();
       fetchSessions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
 
   const fetchBatches = async () => {

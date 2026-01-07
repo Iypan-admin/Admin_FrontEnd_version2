@@ -9,6 +9,7 @@ const EnrolledStudentsModal = ({ isOpen, onClose, batchId, batchName }) => {
     if (isOpen && batchId) {
       fetchEnrolledStudents();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, batchId]);
 
   const fetchEnrolledStudents = async () => {

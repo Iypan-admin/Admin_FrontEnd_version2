@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import RejectionModal from "../components/RejectionModal";
 import EditBatchModal from "../components/EditBatchModal";
@@ -8,7 +7,6 @@ import EnrolledStudentsModal from "../components/EnrolledStudentsModal";
 import { getBatches, approveBatch, rejectBatch, updateBatch, createBatch, deleteBatch } from "../services/Api";
 
 const BatchApprovalPage = () => {
-  const navigate = useNavigate();
   const [allBatches, setAllBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

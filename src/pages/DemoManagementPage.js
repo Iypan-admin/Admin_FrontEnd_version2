@@ -4,7 +4,6 @@ import {
     getDemoRequests,
     getDemoBatches,
     createDemoBatch,
-    updateDemoBatch,
     getDemoBatchById,
 } from "../services/Api";
 import { getAllTeachers } from "../services/Api";
@@ -34,7 +33,6 @@ const DemoManagementPage = () => {
     
     // Modal States
     const [showCreateBatchModal, setShowCreateBatchModal] = useState(false);
-    const [showEditBatchModal, setShowEditBatchModal] = useState(false);
     const [showViewBatchModal, setShowViewBatchModal] = useState(false);
     
     const [showStudentListModal, setShowStudentListModal] = useState(false);

@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import CreateCenterRequestModal from "../components/CreateCenterRequestModal";
 import { getCenterRequests, getAllCenterRequestsForState, approveCenterRequest, rejectCenterRequest } from "../services/Api";
 
 const CenterRequestApprovalPage = () => {
-  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
@@ -78,6 +76,7 @@ const CenterRequestApprovalPage = () => {
     if (userRole) {
       fetchRequests();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole]);
 
   const handleApprove = async (requestId) => {

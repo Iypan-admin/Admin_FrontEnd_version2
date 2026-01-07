@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { createNote, createNoteWithFiles, getNotes, deleteNote } from '../services/Api';
-import { BookOpen, FileText, Calendar, ExternalLink, Download, Eye, Clock, User, Tag, Plus, Trash2, AlertCircle, CheckCircle, Loader2, Upload, X, Link2, File, ChevronLeft } from 'lucide-react';
+import { BookOpen, FileText, Calendar, ExternalLink, Download, Eye, Tag, Plus, Trash2, AlertCircle, Loader2, Upload, X, Link2, ChevronLeft } from 'lucide-react';
 
 function BatchNotesPage() {
   const { batchId } = useParams();

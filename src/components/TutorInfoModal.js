@@ -10,6 +10,7 @@ const TutorInfoModal = ({ isOpen, onClose, userId, userName }) => {
     if (isOpen && userId) {
       fetchTutorInfo();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, userId]);
 
   const fetchTutorInfo = async () => {

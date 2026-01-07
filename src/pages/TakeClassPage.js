@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Calendar, Clock, Video, Edit, Trash2, Save, BookOpen, AlertCircle, CheckCircle, XCircle, Upload } from 'lucide-react';
+import { Video, Edit, Trash2, Save, BookOpen, AlertCircle, CheckCircle, XCircle, Upload } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { createGMeet, getGMeetsByBatch, deleteGMeet, updateGMeet, getBatchById } from '../services/Api';
 

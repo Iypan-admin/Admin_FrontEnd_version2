@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Edit, Trash2, MapPin, Clock, Users, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Edit, Trash2, Clock, AlertCircle } from 'lucide-react';
 import { getEventsByDateRange, createEvent, updateEvent, deleteEvent } from '../services/Api';
 
 const EventCalendar = () => {
@@ -7,7 +7,6 @@ const EventCalendar = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -75,6 +74,7 @@ const EventCalendar = () => {
 
   useEffect(() => {
     fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDate, viewMode]);
 
   // =====================================================
@@ -232,7 +232,6 @@ const EventCalendar = () => {
     const month = currentDate.getMonth();
     
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
     
@@ -285,7 +284,6 @@ const EventCalendar = () => {
             {currentDay.getMonth() === month && (
               <button
                 onClick={() => {
-                  setSelectedDate(new Date(currentDay));
                   setFormData(prev => ({
                     ...prev,
                     event_start_date: `${currentDay.getFullYear()}-${String(currentDay.getMonth() + 1).padStart(2, '0')}-${String(currentDay.getDate()).padStart(2, '0')}`

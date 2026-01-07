@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { getBatchById, getTeacherBatchStudents, getLSRWByBatch, markLSRWComplete } from '../services/Api';
-import { BookOpen, Users, Calendar, Clock, MapPin, GraduationCap, User, CheckCircle, XCircle, AlertCircle, Loader2, Award, Building, Headphones, FileText, Play } from 'lucide-react';
+import { BookOpen, Users, Calendar, Clock, GraduationCap, User, CheckCircle, AlertCircle, Loader2, Award, Building, Headphones, FileText, Play } from 'lucide-react';
 
 function BatchCourseDetailsPage() {
   const { batchId } = useParams();
@@ -78,6 +78,7 @@ function BatchCourseDetailsPage() {
     if (activeTab === 'lsrw' && batchId && isAcademic) {
       fetchLSRWContent();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, batchId, isAcademic]);
 
   const fetchLSRWContent = async () => {

@@ -252,6 +252,7 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
       }
     }
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchData, centers, teachers, courses]);
 
   // Fetch dropdown data
