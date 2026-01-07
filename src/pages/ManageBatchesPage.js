@@ -165,7 +165,7 @@ const ManageBatchesPage = () => {
       setStartingBatch(startBatchModal.batchId);
       const token = localStorage.getItem("token");
 
-      fetch(`${BATCHES_URL}/${startBatchModal.batchId}/start`, {
+      const response = await fetch(`${BATCHES_URL}/${startBatchModal.batchId}/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -202,7 +202,7 @@ const ManageBatchesPage = () => {
       setCompletingBatch(batchId);
       const token = localStorage.getItem("token");
 
-      fetch(`${BATCHES_URL}/${batchId}/complete`, {
+      const response = await fetch(`${BATCHES_URL}/${batchId}/complete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
