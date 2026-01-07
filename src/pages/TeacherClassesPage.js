@@ -15,6 +15,7 @@ function TeacherClassesPage() {
   const [expandedBatches, setExpandedBatches] = useState(new Set()); // Track expanded batches
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'No date';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -61,6 +62,10 @@ function TeacherClassesPage() {
 
   // Determine if a class is upcoming or completed
   const getClassStatus = (classItem) => {
+    if (!classItem.date || !classItem.time) {
+      return 'Upcoming';
+    }
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const classDate = new Date(classItem.date + 'T' + classItem.time);
@@ -538,7 +543,7 @@ function TeacherClassesPage() {
                                               <svg className="w-2.5 h-2.5 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                               </svg>
-                                              <span className="text-xs">{classItem.time.substring(0, 5)}</span>
+                                              <span className="text-xs">{classItem.time ? classItem.time.substring(0, 5) : 'No time'}</span>
                                             </span>
                                           </div>
                                         </div>
