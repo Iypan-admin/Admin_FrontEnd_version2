@@ -1,15 +1,51 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useLocation, useParams } from "react-router-dom"; // Add useParams
+import { getCurrentUserProfile } from '../services/Api';
 
 const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [openSubmenu, setOpenSubmenu] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { batchId } = useParams(); // Get batchId from URL parameters
   const token = localStorage.getItem("token");
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const role = decodedToken?.role || null;
+  
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openSubmenu, setOpenSubmenu] = useState(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+  
+  // Listen for mobile menu toggle events from other components
+  useEffect(() => {
+    const handleToggleMobileMenu = (event) => {
+      setIsMobileMenuOpen(event.detail);
+      // Dispatch state change event for other components
+      window.dispatchEvent(new CustomEvent('mobileMenuStateChange', { detail: event.detail }));
+    };
+    window.addEventListener('toggleMobileMenu', handleToggleMobileMenu);
+    return () => window.removeEventListener('toggleMobileMenu', handleToggleMobileMenu);
+  }, []);
+  
+  // Dispatch state change when menu state changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('mobileMenuStateChange', { detail: isMobileMenuOpen }));
+  }, [isMobileMenuOpen]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    // Load from localStorage for teacher and academic coordinator roles
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  // Save sidebar collapsed state and update CSS variable
+  useEffect(() => {
+    if (role === 'teacher' || role === 'academic') {
+      localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.toString());
+      document.documentElement.style.setProperty('--sidebar-width', isSidebarCollapsed ? '6rem' : '16rem');
+      window.dispatchEvent(new Event('sidebarToggle'));
+    }
+  }, [isSidebarCollapsed, role]);
   // Prioritize full_name, but only if it exists and is not empty/null
   const userName = (decodedToken?.full_name && 
                     decodedToken.full_name !== null && 
@@ -17,6 +53,24 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                     String(decodedToken.full_name).trim() !== '') 
     ? decodedToken.full_name 
     : (decodedToken?.name || null);
+
+  // Fetch user profile picture
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const profile = await getCurrentUserProfile();
+        if (profile && profile.data && profile.data.profile_picture) {
+          setProfilePictureUrl(profile.data.profile_picture);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    
+    if (role === 'teacher' || role === 'academic') {
+      fetchProfile();
+    }
+  }, [role]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -711,8 +765,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           ),
         },
         {
-          path: null, // Parent menu with submenu
-          name: "View Batches",
+          path: "/academic/event-calendar",
+          name: "Event Calendar",
           icon: (
             <svg
               className="w-5 h-5"
@@ -724,10 +778,29 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth="2"
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
+        },
+            {
+          path: null, // Parent menu with submenu
+          name: "View Batches",
+              icon: (
+                <svg
+              className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              ),
           hasSubmenu: true,
           submenu: [
             {
@@ -764,25 +837,6 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                     strokeLinejoin="round"
                     strokeWidth="2"
                     d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              ),
-            },
-            {
-              path: "/academic/batch-sessions",
-              name: "Batch Session",
-              icon: (
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                   />
                 </svg>
               ),
@@ -1071,25 +1125,6 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
             ),
           },
           {
-            path: "/teacher/tutor-info",
-            name: "My Info",
-            icon: (
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M5.121 17.804A7.5 7.5 0 0112 15.5a7.5 7.5 0 016.879 2.304M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            ),
-          },
-          {
             path: "/teacher/classes",
             name: "Your Classes",
             icon: (
@@ -1104,6 +1139,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                   strokeLinejoin="round"
                   strokeWidth="2"
                   d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                />
+              </svg>
+            ),
+          },
+          {
+            path: "/teacher/event-calendar",
+            name: "Event Calendar",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
             ),
@@ -1742,15 +1796,16 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
 
   return (
     <>
-      {/* Mobile Menu Overlay */}
+      {/* Mobile Menu Overlay - Lower z-index for teacher and academic roles so sidebar appears above */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-40"
+          className={`fixed inset-0 bg-black bg-opacity-50 lg:hidden ${role === 'teacher' || role === 'academic' ? 'z-[45]' : 'z-40'}`}
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
-      {/* Enhanced Mobile Menu Button */}
+      {/* Enhanced Mobile Menu Button - Hidden for Teacher and Academic Coordinator Roles */}
+      {role !== 'teacher' && role !== 'academic' && (
       <button
         className="fixed top-4 left-4 p-3 rounded-xl bg-gradient-to-r from-gray-800 to-gray-900 text-white lg:hidden z-50 
                    shadow-lg shadow-gray-900/50 hover:shadow-xl hover:shadow-gray-900/60 
@@ -1767,17 +1822,86 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           <div className="absolute inset-0 rounded-xl bg-blue-500/20 animate-ping opacity-0"></div>
         </div>
       </button>
+      )}
 
       {/* Enhanced Sidebar Navigation */}
-      <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 lg:static lg:inset-0 transition-all duration-300 ease-in-out
-        h-screen w-64 -mr-64 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 
-        flex flex-col shadow-2xl shadow-gray-900/50 z-40 border-r border-gray-700/30 backdrop-blur-sm`}
+      <div className={`${role === 'teacher' || role === 'academic' ? 'fixed' : 'fixed'} inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${role === 'teacher' || role === 'academic' ? 'lg:translate-x-0' : 'lg:translate-x-0 lg:static lg:inset-0'} transition-all duration-300 ease-in-out
+        h-screen ${isSidebarCollapsed && (role === 'teacher' || role === 'academic') ? 'w-24' : 'w-64'} ${role === 'teacher' || role === 'academic' ? '' : '-mr-64'} ${role === 'teacher' || role === 'academic' 
+          ? 'bg-white text-gray-800' 
+          : 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100'
+        } 
+        flex flex-col shadow-2xl ${role === 'teacher' || role === 'academic' ? 'shadow-gray-200' : 'shadow-gray-900/50'} ${role === 'teacher' || role === 'academic' ? 'z-[60]' : 'z-40'} border-r ${role === 'teacher' || role === 'academic' ? 'border-gray-200' : 'border-gray-700/30'} backdrop-blur-sm`}
       >
-        {/* Enhanced App Logo/Name */}
+        {/* Enhanced App Logo/Name - BERRY Style for Teacher and Academic Coordinator */}
+        {role === 'teacher' || role === 'academic' ? (
+          <div className={`relative flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-6'} py-4 border-b border-gray-200 bg-white`}>
+            {!isSidebarCollapsed ? (
+              <>
+                <div className="flex items-center gap-3">
+                  {/* BERRY Style Logo */}
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xl font-bold text-gray-800">ISML</span>
+                    <p className="text-xs text-gray-500">{role === 'teacher' ? 'Teacher Portal' : 'Academic Portal'}</p>
+                  </div>
+                </div>
+                {/* 3 Dot Toggle Button - BERRY Style */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                  className="p-2 rounded-lg transition-all duration-200"
+                  style={{ backgroundColor: '#e3f2fd' }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#bbdefb'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#e3f2fd'}
+                  title="Collapse sidebar"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#2196f3' }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Collapsed Logo and Expand Button - Same Row */}
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                {/* Expand Toggle Button - Same Row */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="ml-2 p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                  title="Expand sidebar"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )}
+            {/* Mobile Close Button - Hidden for Teacher and Academic Coordinator Roles */}
+            {role !== 'teacher' && role !== 'academic' && (
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="lg:hidden absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="relative flex items-center gap-4 px-6 py-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm">
           {/* Background decoration */}
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-blue-500/5"></div>
           
           <div className="relative group">
             <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 
@@ -1797,9 +1921,9 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           </div>
           
           <div className="relative z-10">
-            <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-blue-500 to-purple-500 
+            <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 
                            bg-clip-text text-transparent group-hover:from-blue-300 group-hover:via-blue-400 
-                           group-hover:to-purple-400 transition-all duration-300">
+                           group-hover:to-blue-500 transition-all duration-300">
               ISML Portal
             </span>
             <p className="text-sm text-gray-300 group-hover:text-gray-200 transition-colors duration-300">
@@ -1811,9 +1935,131 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Enhanced Navigation Menu */}
-        <nav className="flex-1 overflow-y-auto py-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+        {/* Enhanced Navigation Menu - BERRY Style for Teacher and Academic Coordinator */}
+        <nav className={`flex-1 overflow-y-auto py-4 ${role === 'teacher' || role === 'academic' ? 'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : 'scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'}`}>
+          {role === 'teacher' || role === 'academic' ? (
+            <div className={isSidebarCollapsed ? 'px-2' : 'px-3'}>
+              {/* Collapsed Icons Only - Single Column, Centered */}
+              {isSidebarCollapsed ? (
+                <ul className="flex flex-col items-center space-y-2">
+                  {getNavItems().map((item) => {
+                    const hasActiveSubmenu = item.hasSubmenu && isSubmenuActive(item.submenu);
+                    
+                    return (
+                      <li key={item.path || item.name} className="group relative w-full flex justify-center">
+                        {item.hasSubmenu ? (
+                          <button
+                            onClick={() => toggleSubmenu(item.name)}
+                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
+                              hasActiveSubmenu
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={hasActiveSubmenu ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${hasActiveSubmenu ? '' : 'text-gray-500'}`} style={hasActiveSubmenu ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                          </button>
+                        ) : (
+                          <Link
+                            to={item.path || '#'}
+                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
+                              isActivePath(item.path)
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={isActivePath(item.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${isActivePath(item.path) ? '' : 'text-gray-500'}`} style={isActivePath(item.path) ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                          </Link>
+                        )}
+                        {/* Tooltip */}
+                        <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
+                          {item.name}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <ul className="space-y-1">
+                  {getNavItems().map((item) => {
+                    const hasActiveSubmenu = item.hasSubmenu && isSubmenuActive(item.submenu);
+                    const isSubmenuOpen = openSubmenu === item.name;
+                    
+                    return (
+                      <li key={item.path || item.name}>
+                        {item.hasSubmenu ? (
+                          <div>
+                            <button
+                              onClick={() => toggleSubmenu(item.name)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                                hasActiveSubmenu
+                                  ? ''
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                              style={hasActiveSubmenu ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                            >
+                              <span className={`${hasActiveSubmenu ? '' : 'text-gray-500'}`} style={hasActiveSubmenu ? { color: '#2196f3' } : {}}>
+                                {item.icon}
+                              </span>
+                              <span className="text-sm font-medium flex-1 text-left">{item.name}</span>
+                              <svg className={`w-4 h-4 transition-transform duration-300 ${isSubmenuOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                            {/* Submenu */}
+                            <div className={`overflow-hidden transition-all duration-300 ${isSubmenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                              <ul className="mt-1 space-y-1 ml-4">
+                                {item.submenu?.map((subItem) => (
+                                  <li key={subItem.path}>
+                                    <Link
+                                      to={subItem.path}
+                                      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
+                                        isActivePath(subItem.path)
+                                          ? ''
+                                          : 'text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                      style={isActivePath(subItem.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                                    >
+                                      <span className={`${isActivePath(subItem.path) ? '' : 'text-gray-500'}`} style={isActivePath(subItem.path) ? { color: '#2196f3' } : {}}>
+                                        {subItem.icon}
+                                      </span>
+                                      <span className="text-sm font-medium">{subItem.name}</span>
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        ) : (
+                          <Link
+                            to={item.path || '#'}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                              isActivePath(item.path)
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={isActivePath(item.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${isActivePath(item.path) ? '' : 'text-gray-500'}`} style={isActivePath(item.path) ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                            <span className="text-sm font-medium">{item.name}</span>
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : (
           <ul className="space-y-2 px-4">
             {getNavItems().map((item, index) => {
               const hasActiveSubmenu = isSubmenuActive(item.submenu);
@@ -1862,7 +2108,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                           </svg>
                         </div>
                         
-                        <div className={`absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 
+                          <div className={`absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-blue-500/10 
                           opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${hasActiveSubmenu ? 'opacity-100' : ''}`}></div>
                       </button>
                       
@@ -1946,17 +2192,95 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
               );
             })}
           </ul>
+          )}
         </nav>
 
         {/* Compact User Profile & Logout */}
-        <div className="border-t border-gray-700/50 p-3 bg-gradient-to-r from-gray-900/40 to-gray-800/40 backdrop-blur-sm">
+        <div className={`border-t ${role === 'teacher' || role === 'academic' ? 'border-gray-200' : 'border-gray-700/50'} ${isSidebarCollapsed && (role === 'teacher' || role === 'academic') ? 'p-2' : 'p-4'} ${role === 'teacher' || role === 'academic' ? 'bg-white' : 'bg-gradient-to-r from-gray-900/40 to-gray-800/40 backdrop-blur-sm'}`}>
+          {role === 'teacher' || role === 'academic' ? (
+            <>
+              {isSidebarCollapsed ? (
+                /* Collapsed User Profile - Icon Only */
+                <div className="flex flex-col items-center gap-2">
+                  <div className="relative">
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-md"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                        <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : 'T')}</span>
+                      </div>
+                    )}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
+                                  rounded-full border-2 border-white shadow-sm"></div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-all duration-200"
+                    title="Logout"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* User Profile Section - BERRY Style */}
+                  <div className="flex items-center gap-3 mb-3 px-2">
+                    <div className="relative">
+                      {profilePictureUrl ? (
+                        <img
+                          src={profilePictureUrl}
+                          alt="Profile"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-md"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                          <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : 'T')}</span>
+                        </div>
+                      )}
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
+                                    rounded-full border-2 border-white shadow-sm"></div>
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 truncate">
+                        {userName || (role === 'academic' ? 'Academic Coordinator' : 'Teacher')}
+                      </p>
+                      <p className="text-xs text-gray-500 capitalize truncate">
+                        {role === 'academic' ? 'Academic Coordinator' : (role || 'teacher')}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Logout Button - BERRY Style */}
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 
+                              hover:bg-gray-100 rounded-lg transition-all duration-200"
+                  >
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    <span>Logout</span>
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <>
           {/* User Profile Section */}
           <div className="flex items-center gap-3 mb-3 px-2 group">
             <div className="relative">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 
-                            flex items-center justify-center shadow-lg shadow-blue-500/30 
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30 
                             group-hover:shadow-xl group-hover:shadow-blue-500/40 transition-all duration-300
-                            group-hover:scale-110 group-hover:rotate-2">
+                                group-hover:scale-110 group-hover:rotate-2" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2, #1565c0)' }}>
                 <span className="text-sm font-bold text-white">{role?.[0].toUpperCase()}</span>
               </div>
               {/* Online indicator */}
@@ -2018,6 +2342,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
               </svg>
             </div>
           </button>
+            </>
+          )}
         </div>
       </div>
     </>

@@ -110,6 +110,149 @@ export const editUser = async (userId, userData, token) => {
 };
 
 /**
+ * Upload profile picture for logged-in user
+ * @param {File} file - File object from input[type="file"]
+ * @returns {Promise<string>} - URL of uploaded profile picture
+ * @throws {Error} - Throws error if the request fails
+ */
+export const uploadProfilePicture = async (file) => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("Authentication token not found");
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch(`${USER_API_URL}/user/upload-profile-picture`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                // Do NOT set Content-Type when using FormData - browser will set it automatically with boundary
+            },
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to upload profile picture");
+        }
+
+        return result.data; // Return the public URL
+    } catch (error) {
+        throw new Error(`Upload Profile Picture Error: ${error.message}`);
+    }
+};
+
+/**
+ * Change password for logged-in user
+ * @param {string} currentPassword - Current password
+ * @param {string} newPassword - New password
+ * @returns {Promise<Object>} - Response containing success message
+ * @throws {Error} - Throws error if the request fails
+ */
+export const changePassword = async (currentPassword, newPassword) => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("Authentication token not found");
+        }
+
+        const response = await fetch(`${USER_API_URL}/user/change-password`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to change password");
+        }
+
+        return result;
+    } catch (error) {
+        throw new Error(`Change Password Error: ${error.message}`);
+    }
+};
+
+/**
+ * Get current user profile
+ * @returns {Promise<Object>} - Response containing user profile data
+ * @throws {Error} - Throws error if the request fails
+ */
+export const getCurrentUserProfile = async () => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("Authentication token not found");
+        }
+
+        const response = await fetch(`${USER_API_URL}/user/profile`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to fetch profile");
+        }
+
+        return result;
+    } catch (error) {
+        throw new Error(`Get Profile Error: ${error.message}`);
+    }
+};
+
+/**
+ * Update current user profile
+ * @param {string} fullName - Full name to update
+ * @returns {Promise<Object>} - Response containing success message
+ * @throws {Error} - Throws error if the request fails
+ */
+export const updateProfile = async (fullName) => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("Authentication token not found");
+        }
+
+        const response = await fetch(`${USER_API_URL}/user/profile`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                full_name: fullName
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to update profile");
+        }
+
+        return result;
+    } catch (error) {
+        throw new Error(`Update Profile Error: ${error.message}`);
+    }
+};
+
+/**
  * Delete a user (Admin only)
  * @param {string} userId - ID of the user to be deleted
  * @param {string} token - Authentication token
@@ -265,7 +408,36 @@ export const getReferredStudents = async (centerId, token) => {
     }
 };
 
+/**
+ * Fetch enrolled students by batch ID
+ * @param {string} batchId - The ID of the batch
+ * @returns {Promise<Object>} - Response with data array of students
+ * @throws {Error} - Throws an error if the request fails
+ */
+export const getEnrolledStudentsByBatch = async (batchId) => {
+    try {
+        if (!batchId) throw new Error('Batch ID is required');
 
+        const response = await fetch(`${LIST_API_URL}/students/batch/${batchId}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        return data;
+
+    } catch (error) {
+        console.error('getEnrolledStudentsByBatch error:', error);
+        throw error;
+    }
+};
 
 /**
  * Fetch all batches associated with a specific center.
@@ -1000,7 +1172,7 @@ export const getTeacherBatchStudents = async (batchId, token) => {
 
 export const getBatchById = async (token, batchId) => {
     try {
-        const response = await fetch(`${LIST_API_URL}/batches/${batchId}`, {
+        const response = await fetch(`${BATCHES_URL}/${batchId}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -1010,7 +1182,7 @@ export const getBatchById = async (token, batchId) => {
 
         const data = await response.json();
         if (!response.ok) {
-            throw new Error(data.message || 'Failed to fetch batch details');
+            throw new Error(data.error || data.message || 'Failed to fetch batch details');
         }
 
         return data;
@@ -1729,6 +1901,33 @@ export const getCenterPayments = async () => {
         return data;
     } catch (error) {
         console.error("Failed to fetch center payments:", error);
+        throw error;
+    }
+};
+
+/**
+ * Get Student Payment Details by Registration Number and Batch ID
+ * @param {string} registrationNumber - Student registration number
+ * @param {string} batchId - Batch ID
+ * @returns {Promise<Object>} - Payment details including payment type, history, and EMI info
+ */
+export const getStudentPaymentDetails = async (registrationNumber, batchId) => {
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${FINANCE_API_URL}/student-payment/${registrationNumber}/${batchId}`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || data.message || "Failed to fetch student payment details");
+
+        return data;
+    } catch (error) {
+        console.error('Error fetching student payment details:', error);
         throw error;
     }
 };
@@ -3247,9 +3446,14 @@ export const createChatMessage = async (chatData) => {
  * @returns {Promise<Array>} - List of chat messages.
  * @throws {Error} - Throws an error if the request fails.
  */
-export const fetchChatMessages = async (batchId) => {
+export const fetchChatMessages = async (batchId, recipientId = null) => {
     try {
-        const response = await fetch(`${CHAT_API_URL}/chats/${batchId}`, {
+        let url = `${CHAT_API_URL}/chats/${batchId}`;
+        if (recipientId) {
+            url += `?recipient_id=${recipientId}`;
+        }
+        
+        const response = await fetch(url, {
             method: "GET",
         });
 
@@ -4248,6 +4452,35 @@ export const getMyLeaveRequests = async () => {
     return data;
 };
 
+export const updateTeacherLeaveRequest = async (id, payload) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${LIST_API_URL}/teacher/leave-requests/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || data.message || 'Failed to update request');
+    return data;
+};
+
+export const deleteTeacherLeaveRequest = async (id) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${LIST_API_URL}/teacher/leave-requests/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || data.message || 'Failed to delete request');
+    return data;
+};
+
 export const listSubTutorRequests = async (status) => {
     const token = localStorage.getItem('token');
     const url = `${LIST_API_URL}/academic/sub-tutor-requests${status ? `?status=${status}` : ''}`;
@@ -5127,5 +5360,99 @@ export const verifyReadingAttempt = async (attemptId, token) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || data.message || 'Failed to verify reading attempt');
     return data;
+};
+
+// ----------------------
+// Teacher Notifications Functions
+// ----------------------
+
+/**
+ * Fetch unread notifications for the logged-in teacher
+ * @param {string} token - Authentication token
+ */
+export const getTeacherNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/teacher/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch notifications');
+        return data;
+    } catch (error) {
+        console.error('Error fetching teacher notifications:', error);
+        throw error;
+    }
+};
+
+/**
+ * Mark a notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markTeacherNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/teacher/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to mark notification as read');
+        return data;
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get academic coordinator notifications
+ * @param {string} token - Authentication token
+ */
+export const getAcademicNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/academic/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch notifications');
+        return data;
+    } catch (error) {
+        console.error('Error fetching academic notifications:', error);
+        throw error;
+    }
+};
+
+/**
+ * Mark an academic notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markAcademicNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/academic/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to mark notification as read');
+        return data;
+    } catch (error) {
+        console.error('Error marking academic notification as read:', error);
+        throw error;
+    }
 };
 

@@ -7,13 +7,17 @@ import ManageUsersPage from "./pages/ManageUsersPage";
 import FinanceAdminPage from "./pages/FinanceAdminPage";
 import ApproveStudentsPage from "./pages/ApproveStudentsPage";
 import AcademicCoordinatorPage from "./pages/AcademicCoordinatorPage";
+import AcademicNotificationPage from "./pages/AcademicNotificationPage";
 import ManageBatchesPage from "./pages/ManageBatchesPage";
+import BatchDetailViewPage from "./pages/BatchDetailViewPage";
 import ManageStudentsPage from "./pages/ManageStudentsPage";
+import StudentDetailViewPage from "./pages/StudentDetailViewPage";
 import StateAdminPage from "./pages/StateAdminPage";
 import ManageCentersPage from "./pages/ManageCentersPage";
 import CenterAdminPage from "./pages/CenterAdminPage";
 import TeacherPage from "./pages/TeacherPage";
 import TeacherClassesPage from './pages/TeacherClassesPage';
+import TeacherEventCalendarPage from './pages/TeacherEventCalendarPage';
 import BatchDetailPage from './pages/BatchDetailPage';
 import TakeClassPage from './pages/TakeClassPage';
 import BatchChatsPage from './pages/BatchChatsPage';
@@ -50,6 +54,8 @@ import CenterRequestApprovalPage from "./pages/CenterRequestApprovalPage";
 import StateBatchRequestsPage from "./pages/StateBatchRequestsPage";
 import AcademicBatchRequestsPage from "./pages/AcademicBatchRequestsPage";
 import EventManagementPage from "./pages/EventManagementPage";
+import EventCalendarPage from "./pages/EventCalendarPage";
+import AccountSettingsPage from "./pages/AccountSettingsPage";
 import DemoManagementPage from "./pages/DemoManagementPage";
 import AllLeadsPage from "./pages/AllLeadsPage";
 import TeacherLeaveRequestPage from "./pages/TeacherLeaveRequestPage";
@@ -59,7 +65,6 @@ import LiveClassPage from "./pages/LiveClassPage";
 import LSRWUploadPage from "./pages/LSRWUploadPage";
 import LSRWFileViewPage from "./pages/LSRWFileViewPage";
 import TeacherLSRWPage from "./pages/TeacherLSRWPage";
-import BatchSessionPage from "./pages/BatchSessionPage";
 
 
 function App() {
@@ -411,6 +416,30 @@ function App() {
               }
             />
             <Route
+              path="/academic/notifications"
+              element={
+                <ProtectedRoute allowedRole="academic">
+                  <AcademicNotificationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="academic">
+                  <EventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic-coordinator/settings"
+              element={
+                <ProtectedRoute allowedRole="academic">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/manage-batches"
               element={
                 <ProtectedRoute allowedRole="academic">
@@ -419,10 +448,26 @@ function App() {
               }
             />
             <Route
+              path="/manage-batches/:batchId"
+              element={
+                <ProtectedRoute allowedRole="academic">
+                  <BatchDetailViewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/manage-students"
               element={
                 <ProtectedRoute allowedRole="academic">
                   <ManageStudentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-students/:studentId"
+              element={
+                <ProtectedRoute allowedRole="academic">
+                  <StudentDetailViewPage />
                 </ProtectedRoute>
               }
             />
@@ -439,22 +484,6 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="academic">
                   <AcademicBatchRequestsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/academic/batch-sessions"
-              element={
-                <ProtectedRoute allowedRole="academic">
-                  <BatchSessionPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/academic/batch-sessions/:batchId"
-              element={
-                <ProtectedRoute allowedRole="academic">
-                  <BatchSessionPage />
                 </ProtectedRoute>
               }
             />
@@ -667,6 +696,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="teacher">
                   <TeacherClassesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherEventCalendarPage />
                 </ProtectedRoute>
               }
             />

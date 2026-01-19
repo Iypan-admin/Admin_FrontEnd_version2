@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const validatePassword = (password) => {
   const minLength = 8;
@@ -34,6 +34,20 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Smooth slide-in animation
+  useEffect(() => {
+    // Trigger animation after mount
+    setTimeout(() => setIsVisible(true), 10);
+    
+    // Prevent body scroll when modal is open
+    document.body.style.overflow = 'hidden';
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -58,7 +72,7 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
     setIsSubmitting(true);
     try {
       await onUpdate(user.id, formData); // full_name will be included
-      onClose();
+      handleClose();
     } catch (err) {
       setError(err.message || 'Failed to update user');
     } finally {
@@ -66,39 +80,113 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
     }
   };
 
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(() => {
+      onClose();
+    }, 300); // Wait for animation to complete
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md">
-        <div className="px-6 py-4 border-b border-gray-200">
+    <div 
+      className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${
+        isVisible ? 'opacity-100' : 'opacity-0'
+      }`}
+      onClick={handleClose}
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+    >
+      {/* Right Side Modal - BERRY Style with Smooth Slide Animation */}
+      <div 
+        className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[28rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto ${
+          isVisible ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header - BERRY Style */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-800">Edit User</h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              ✕
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">
+                Edit User
+              </h2>
+            </div>
+            <button
+              onClick={handleClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition duration-200"
+            >
+              <svg
+                className="w-5 h-5 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {/* Modal Body - BERRY Style */}
+        <div className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded">
-              {error}
+              <div className="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 text-sm rounded">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-red-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium">{error}</p>
+                  </div>
+                </div>
             </div>
           )}
 
+            <div className="space-y-5">
           {/* Full Name Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
             </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
             <input
               type="text"
               value={formData.full_name}
               onChange={(e) =>
                 setFormData({ ...formData, full_name: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               required
             />
+                </div>
           </div>
 
           {/* Username Input */}
@@ -106,15 +194,23 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Username
             </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
             <input
               type="text"
               value={formData.name}
               onChange={(e) =>
                 setFormData({ ...formData, name: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               required
             />
+                </div>
           </div>
 
           {/* Password Input */}
@@ -123,13 +219,19 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
               New Password (leave blank to keep current)
             </label>
             <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
               <input
                 type={showPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                    className="w-full pl-10 pr-12 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
               />
               <button
                 type="button"
@@ -138,7 +240,7 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
               >
                 {showPassword ? (
                   <svg
-                    className="h-5 w-5 text-gray-500"
+                        className="h-5 w-5 text-gray-500 hover:text-gray-700"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -158,7 +260,7 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
                   </svg>
                 ) : (
                   <svg
-                    className="h-5 w-5 text-gray-500"
+                        className="h-5 w-5 text-gray-500 hover:text-gray-700"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -173,28 +275,65 @@ const EditUserModal = ({ user, onClose, onUpdate }) => {
                 )}
               </button>
             </div>
-            <p className="mt-2 text-sm text-gray-500">
-              If changing password: Must contain at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character.
+                <p className="mt-2 text-xs text-gray-500">
+                  If changing: Must contain 8+ chars, uppercase, lowercase, number & special char
             </p>
+              </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4">
+            {/* Modal Footer - BERRY Style */}
+            <div className="pt-6 border-t border-gray-200 mt-6">
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg 
+                  hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition duration-200"
+                  onClick={handleClose}
+                  disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white rounded-lg 
+                  focus:outline-none focus:ring-2 focus:ring-offset-2 transition duration-200 shadow-sm hover:shadow-md
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: '#2196f3' }}
+                  onMouseEnter={(e) => !isSubmitting && (e.target.style.backgroundColor = '#1976d2')}
+                  onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = '#2196f3')}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+                  {isSubmitting ? (
+                    <div className="flex items-center justify-center">
+                      <svg
+                        className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Saving...
+                    </div>
+                  ) : (
+                    "Submit"
+                  )}
             </button>
+              </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

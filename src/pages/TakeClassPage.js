@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Video, Edit, Trash2, Save, BookOpen, AlertCircle, CheckCircle, XCircle, Upload } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Video, Edit, Trash2, Save, AlertCircle, CheckCircle, XCircle, Upload } from 'lucide-react';
 import Navbar from '../components/Navbar';
-import { createGMeet, getGMeetsByBatch, deleteGMeet, updateGMeet, getBatchById } from '../services/Api';
+import TeacherNotificationBell from '../components/TeacherNotificationBell';
+import { createGMeet, getGMeetsByBatch, deleteGMeet, updateGMeet, getBatchById, getMyTutorInfo } from '../services/Api';
 
 function TakeClassPage() {
   const { batchId } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [batch, setBatch] = useState(null);
@@ -14,6 +16,97 @@ function TakeClassPage() {
   const [savingSession, setSavingSession] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(null); // session_number or null
   const [cancelReason, setCancelReason] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [tutorInfo, setTutorInfo] = useState(null);
+
+  // Get full name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const tokenFullName = decodedToken?.full_name || null;
+  
+  // Helper function to check if a name is a full name (has spaces) vs username
+  const isFullName = (name) => {
+    if (!name || name.trim() === '') return false;
+    return name.trim().includes(' ');
+  };
+  
+  // Get display name - ONLY show full name, never username
+  const getDisplayName = () => {
+    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
+      return tokenFullName;
+    }
+    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '' && isFullName(tutorInfo.full_name)) {
+      return tutorInfo.full_name;
+    }
+    if (tokenFullName && tokenFullName.trim() !== '') {
+      return tokenFullName;
+    }
+    return "Teacher";
+  };
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  // Toggle mobile menu
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+  };
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle(); // Initial check
+    
+    return () => {
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
+  }, []);
+
+  // Fetch tutor info
+  useEffect(() => {
+    const fetchTutorInfo = async () => {
+      try {
+        const data = await getMyTutorInfo();
+        setTutorInfo(data);
+      } catch (error) {
+        console.error("Failed to fetch tutor info:", error);
+      }
+    };
+    fetchTutorInfo();
+  }, []);
 
   // Fetch batch details
   useEffect(() => {
@@ -273,6 +366,69 @@ function TakeClassPage() {
     });
   };
 
+  // Pagination calculations
+  const totalPages = Math.ceil(sessions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedSessions = sessions.slice(startIndex, endIndex);
+
+  // Reset to page 1 if current page is beyond total pages
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    } else if (totalPages === 0 && currentPage > 1) {
+      setCurrentPage(1);
+    }
+  }, [sessions.length, currentPage, totalPages]);
+
+  // Pagination helper functions
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      // Show all pages if total is less than max visible
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always show first page
+      pages.push(1);
+      
+      if (currentPage <= 3) {
+        // Show first 5 pages
+        for (let i = 2; i <= 5; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        // Show last 5 pages
+        pages.push('...');
+        for (let i = totalPages - 4; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        // Show pages around current
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
+
   // CSV Upload Handler
   const handleCSVUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -392,45 +548,172 @@ function TakeClassPage() {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex">
       <Navbar />
-      <div className="flex-1 lg:ml-64 h-screen overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
-        <div className="p-3 sm:p-4 lg:p-6 xl:p-8 min-h-full">
-          <div className="mt-16 lg:mt-0">
-            <div className="max-w-7xl mx-auto">
-              {/* Enhanced Header */}
-              <div className="mb-4 sm:mb-6">
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+        {/* Top Header Bar - BERRY Style */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between">
+              {/* Left: Hamburger Menu & Title */}
                 <div className="flex items-center space-x-3 sm:space-x-4">
-                  <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl shadow-lg">
-                    <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                  </div>
+                <button 
+                  onClick={toggleMobileMenu}
+                  className="lg:hidden p-2.5 rounded-lg transition-all duration-200" style={{ backgroundColor: '#e3f2fd' }} onMouseEnter={(e) => e.target.style.backgroundColor = '#bbdefb'} onMouseLeave={(e) => e.target.style.backgroundColor = '#e3f2fd'}
+                  title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                >
+                  {isMobileMenuOpen ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#2196f3' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#2196f3' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
                   <div>
-                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
                       Take Class
                     </h1>
-                    <p className="text-sm sm:text-base text-gray-600 mt-1">Schedule and manage your teaching sessions</p>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                    Schedule and manage your teaching sessions
+                  </p>
                   </div>
                 </div>
-              </div>
 
-              {/* Table Format View - Always shown */}
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl sm:rounded-2xl shadow-xl p-4 sm:p-6 lg:p-8 border border-white/20">
+              {/* Right: Notifications, Profile */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                {/* Notifications */}
+                <TeacherNotificationBell />
+
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+                    {tutorInfo?.profile_photo ? (
+                      <img
+                        src={tutorInfo.profile_photo}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-gray-200 cursor-pointer transition-all" onMouseEnter={(e) => e.target.style.boxShadow = '0 0 0 2px #2196f3'} onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer transition-all" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }} onMouseEnter={(e) => e.target.style.boxShadow = '0 0 0 2px #2196f3'} onMouseLeave={(e) => e.target.style.boxShadow = 'none'}>
+                        {getDisplayName()?.charAt(0).toUpperCase() || "T"}
+              </div>
+                    )}
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      ></div>
+                      
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        <div className="px-4 py-4 border-b border-gray-200" style={{ background: 'linear-gradient(to right, #e3f2fd, #e3f2fd)' }}>
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Good Morning, {getDisplayName()?.split(' ')[0] || "Teacher"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1">Teacher</p>
+                        </div>
+                        <div className="px-4 py-3 border-b border-gray-200">
+                          <div className="flex items-center bg-gray-100 rounded-lg px-3 py-2">
+                            <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                              type="text"
+                              placeholder="Search profile options"
+                              className="bg-transparent border-none outline-none text-sm flex-1 text-gray-600"
+                            />
+                          </div>
+                        </div>
+                        <div className="px-4 py-3 bg-blue-50 border-b border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-gray-800">Allow Notifications</span>
+                            <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2" style={{ '--focus-ring': '#2196f3' }} onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px #2196f3'} onBlur={(e) => e.target.style.boxShadow = 'none'}>
+                              <span className="inline-block h-4 w-4 transform translate-x-1 rounded-full bg-white transition-transform"></span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="py-2">
+                          <button
+                            onClick={() => {
+                              navigate('/teacher/tutor-info');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              navigate('/teacher');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Dashboard</span>
+                          </button>
+                        </div>
+                        <div className="px-4 py-3 border-t border-gray-200">
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem('token');
+                              window.dispatchEvent(new Event('storage'));
+                              navigate('/');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-2 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm font-medium">Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Page Content */}
+        <div className="p-3 sm:p-4 lg:p-6 xl:p-8">
+          <div className="max-w-7xl mx-auto">
+
+              {/* BERRY Style Table Container */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 lg:p-8">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                    <h2 className="text-lg sm:text-xl font-bold text-gray-900">Session Management</h2>
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-800">Session Management</h2>
                     {batch?.total_sessions && (
-                      <p className="text-sm text-gray-600">Total Sessions: {batch.total_sessions}</p>
+                      <p className="text-sm text-gray-600 mt-1">Total Sessions: {batch.total_sessions}</p>
                     )}
                     </div>
                     <div className="flex items-center space-x-3">
                       <button
                         onClick={downloadCSVTemplate}
-                        className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors flex items-center space-x-2"
+                        className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 flex items-center space-x-2 shadow-sm"
                       >
                         <Upload className="w-4 h-4" />
                         <span>Download Template</span>
                       </button>
-                      <label className="px-3 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg cursor-pointer transition-colors flex items-center space-x-2">
+                      <label className="px-4 py-2 text-sm font-medium text-white rounded-lg cursor-pointer transition-all duration-200 flex items-center space-x-2 shadow-sm hover:shadow-md" style={{ backgroundColor: '#2196f3' }} onMouseEnter={(e) => e.target.style.backgroundColor = '#1976d2'} onMouseLeave={(e) => e.target.style.backgroundColor = '#2196f3'}>
                         <Upload className="w-4 h-4" />
                         <span>Upload CSV</span>
                         <input
@@ -452,13 +735,13 @@ function TakeClassPage() {
                   
                 {loading ? (
                   <div className="flex flex-col items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
+                    <div className="animate-spin rounded-full h-12 w-12 border-4" style={{ borderColor: '#e3f2fd', borderTopColor: '#2196f3' }}></div>
                     <p className="mt-4 text-gray-600 font-medium">Loading sessions...</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                      <thead style={{ backgroundColor: '#f5f5f5' }}>
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S.No</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
@@ -466,6 +749,7 @@ function TakeClassPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Google Meet Link</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attendance</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
@@ -473,83 +757,111 @@ function TakeClassPage() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {sessions.length === 0 ? (
                           <tr>
-                            <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan="9" className="px-4 py-8 text-center text-gray-600">
                               No sessions found. {batch?.total_sessions ? `Expected ${batch.total_sessions} sessions.` : 'Create sessions to get started.'}
                             </td>
                           </tr>
                         ) : (
-                          sessions.map((session) => {
+                          paginatedSessions.map((session) => {
                             const isEditing = editingSession === session.session_number;
                             const isSaving = savingSession === session.session_number;
                             
                             return (
-                              <tr key={session.session_number || session.meet_id} className="hover:bg-gray-50">
-                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              <tr key={session.session_number || session.meet_id} className="hover:bg-gray-50 transition-colors duration-150">
+                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
                                   {session.session_number}
                                 </td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
                                   {isEditing ? (
                           <input
                             type="date"
                                       value={session.date || ''}
                                       onChange={(e) => handleSessionChange(session.session_number, 'date', e.target.value)}
-                                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     />
                                   ) : (
                                     session.date ? formatDate(session.date) : '-'
                                   )}
                                 </td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
                                   {isEditing ? (
                           <input
                             type="time"
                                       value={session.time || ''}
                                       onChange={(e) => handleSessionChange(session.session_number, 'time', e.target.value)}
-                                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     />
                                   ) : (
                                     session.time ? formatTime(session.time) : '-'
                                   )}
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-500">
+                                <td className="px-4 py-4 text-sm text-gray-600">
                                   {isEditing ? (
                           <input
                             type="text"
                                       value={session.title || ''}
                                       onChange={(e) => handleSessionChange(session.session_number, 'title', e.target.value)}
-                                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     />
                                   ) : (
                                     session.title || '-'
                                   )}
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-500">
+                                <td className="px-4 py-4 text-sm text-gray-600">
                                   {isEditing ? (
                           <input
                             type="url"
                                       value={session.meet_link || ''}
                                       onChange={(e) => handleSessionChange(session.session_number, 'meet_link', e.target.value)}
                             placeholder="https://meet.google.com/xxx-xxxx-xxx"
-                                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     />
                                   ) : session.meet_link ? (
-                                    <a href={session.meet_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center">
+                                    <a href={session.meet_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline flex items-center transition-colors" style={{ color: '#2196f3' }}>
                                       <Video className="w-4 h-4 mr-1" /> Join
                                     </a>
                                   ) : (
                                     '-'
                                   )}
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-500">
+                                <td className="px-4 py-4 text-sm text-gray-600">
                                   {isEditing ? (
                           <textarea
                                       value={session.note || ''}
                                       onChange={(e) => handleSessionChange(session.session_number, 'note', e.target.value)}
-                                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                       rows="2"
                                     />
                                   ) : (
                                     session.note || '-'
+                                  )}
+                                </td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  {session.attendance && session.attendance.marked ? (
+                                    <div className="space-y-1">
+                                      <div className="text-xs font-medium">
+                                        <span className="text-green-600">P: {session.attendance.present_count || 0}</span>
+                                        {' / '}
+                                        <span className="text-red-600">A: {session.attendance.absent_count || 0}</span>
+                                        {session.attendance.late_count > 0 && (
+                                          <>
+                                            {' / '}
+                                            <span className="text-orange-600">L: {session.attendance.late_count}</span>
+                                          </>
+                                        )}
+                                        {session.attendance.excused_count > 0 && (
+                                          <>
+                                            {' / '}
+                                            <span className="text-blue-600">E: {session.attendance.excused_count}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        Total: {session.attendance.total_students || 0} students
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">Not marked</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -557,7 +869,7 @@ function TakeClassPage() {
                                     <select
                                       value={session.status || 'Scheduled'}
                                       onChange={(e) => handleStatusChange(session.session_number, e.target.value)}
-                                      className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                      className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     >
                                       <option value="Scheduled">Scheduled</option>
                                       <option value="Completed">Completed</option>
@@ -565,13 +877,13 @@ function TakeClassPage() {
                                     </select>
                                   ) : (
                                     <div className="flex items-center space-x-2">
-                                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                      <span className={`px-3 py-1 text-xs font-medium rounded-lg ${
                                         session.status === 'Completed' 
-                                          ? 'bg-green-100 text-green-800' 
+                                          ? 'bg-green-50 text-green-700 border border-green-200' 
                                           : session.status === 'Cancelled'
-                                          ? 'bg-red-100 text-red-800'
-                                          : 'bg-blue-100 text-blue-800'
-                                      }`}>
+                                          ? 'bg-red-50 text-red-700 border border-red-200'
+                                          : 'text-blue-700 border border-blue-200'
+                                      }`} style={session.status === 'Scheduled' ? { backgroundColor: '#e3f2fd' } : {}}>
                                         {session.status === 'Completed' && <CheckCircle className="w-3 h-3 inline mr-1" />}
                                         {session.status === 'Cancelled' && <XCircle className="w-3 h-3 inline mr-1" />}
                                         {session.status || 'Scheduled'}
@@ -590,7 +902,7 @@ function TakeClassPage() {
                                     <button
                                         onClick={() => handleSessionSave(session.session_number)}
                                         disabled={isSaving}
-                                        className="text-green-600 hover:text-green-900 disabled:opacity-50 flex items-center"
+                                        className="p-1.5 rounded-lg hover:bg-green-50 text-green-600 hover:text-green-700 disabled:opacity-50 flex items-center transition-colors"
                                         title="Save"
                                       >
                                         {isSaving ? (
@@ -601,7 +913,7 @@ function TakeClassPage() {
                                     </button>
                                     <button
                                         onClick={handleSessionCancel}
-                                        className="text-gray-600 hover:text-gray-900 flex items-center"
+                                        className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg flex items-center transition-colors"
                                         title="Cancel"
                                       >
                                         Cancel
@@ -611,15 +923,16 @@ function TakeClassPage() {
                                     <div className="flex space-x-2">
                                     <button
                                         onClick={() => handleSessionEdit(session.session_number)}
-                                        className="text-blue-600 hover:text-blue-900 flex items-center"
+                                        className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 hover:text-blue-700 flex items-center transition-colors"
                                         title="Edit"
+                                        style={{ color: '#2196f3' }}
                                     >
                                         <Edit className="w-4 h-4" />
                                     </button>
                                       {session.meet_id && (
                                     <button
                                           onClick={() => handleDeleteSession(session.meet_id)}
-                                          className="text-red-600 hover:text-red-900 flex items-center"
+                                          className="p-1.5 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700 flex items-center transition-colors"
                                           title="Delete"
                                     >
                                           <Trash2 className="w-4 h-4" />
@@ -636,23 +949,90 @@ function TakeClassPage() {
                     </table>
                   </div>
                 )}
+
+                {/* BERRY Style Pagination */}
+                {sessions.length > 0 && totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 px-6 py-4 border-t border-gray-200">
+                    {/* Left: Showing entries info */}
+                    <div className="text-sm text-gray-500">
+                      Showing {startIndex + 1} to {Math.min(endIndex, sessions.length)} of {sessions.length} entries
               </div>
+
+                    {/* Right: Pagination buttons */}
+                    <div className="flex items-center gap-2">
+                      {/* Previous button */}
+                      <button
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === 1
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+
+                      {/* Page numbers */}
+                      {getPageNumbers().map((page, idx) => {
+                        if (page === '...') {
+                          return (
+                            <span key={`ellipsis-${idx}`} className="px-3 py-2 text-gray-500">
+                              ...
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              currentPage === page
+                                ? 'text-white' 
+                                : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                            }`}
+                            style={currentPage === page ? { backgroundColor: '#2196f3' } : {}}
+                          >
+                            {page}
+                          </button>
+                        );
+                      })}
+
+                      {/* Next button */}
+                      <button
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === totalPages
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Cancellation Reason Modal */}
+      {/* BERRY Style Cancellation Reason Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Cancel Session {showCancelModal}</h3>
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4 border border-gray-200">
+            <h3 className="text-lg font-semibold mb-4 text-gray-800">Cancel Session {showCancelModal}</h3>
             <p className="text-sm text-gray-600 mb-4">Please provide a reason for cancellation:</p>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               placeholder="Enter cancellation reason..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 text-sm"
               rows="4"
             />
             <div className="flex justify-end space-x-3">
@@ -661,13 +1041,16 @@ function TakeClassPage() {
                   setShowCancelModal(null);
                   setCancelReason('');
                 }}
-                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmCancel}
-                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                className="px-4 py-2 text-white rounded-lg hover:shadow-md transition-all text-sm font-medium"
+                style={{ backgroundColor: '#f44336' }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#d32f2f'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#f44336'}
               >
                 Confirm Cancellation
               </button>

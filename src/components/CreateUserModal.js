@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ROLE_CONFIG } from "../config/roleConfig";
 
 const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
@@ -9,6 +9,20 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Smooth slide-in animation
+  useEffect(() => {
+    // Trigger animation after mount
+    setTimeout(() => setIsVisible(true), 10);
+    
+    // Prevent body scroll when modal is open
+    document.body.style.overflow = 'hidden';
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
 
   const validatePassword = (password) => {
     const minLength = 8;
@@ -71,7 +85,7 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
       };
 
       await onCreateUser(userData);
-      onClose();
+      handleClose();
     } catch (err) {
       const errorMessage = err.message || `Failed to create user. Please try again.`;
       setError(errorMessage);
@@ -80,18 +94,44 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
     }
   };
 
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(() => {
+      onClose();
+    }, 300); // Wait for animation to complete
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-xs sm:max-w-md md:max-w-lg mx-auto">
-        {/* Modal Header */}
-        <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+    <div 
+      className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${
+        isVisible ? 'opacity-100' : 'opacity-0'
+      }`}
+      onClick={handleClose}
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+    >
+      {/* Right Side Modal - BERRY Style with Smooth Slide Animation */}
+      <div 
+        className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[28rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto ${
+          isVisible ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header - BERRY Style */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">
               {getModalTitle()}
             </h2>
+            </div>
             <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition duration-200"
+              onClick={handleClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition duration-200"
             >
               <svg
                 className="w-5 h-5 text-gray-500"
@@ -110,15 +150,15 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-3 sm:p-6">
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+        {/* Modal Body - BERRY Style */}
+        <div className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded">
+              <div className="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 text-sm rounded">
                 <div className="flex">
                   <div className="flex-shrink-0">
                     <svg
-                      className="h-5 w-5 text-red-400"
+                      className="h-5 w-5 text-red-500"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -138,21 +178,28 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
               </div>
             )}
 
-            <div className="space-y-4 sm:space-y-6">
+            <div className="space-y-5">
               {/* Full Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Full Name
                 </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
                 <input
                   type="text"
                   placeholder="Enter full name"
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg 
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition duration-200"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
                   value={fullname}
                   onChange={(e) => setFullname(e.target.value)}
                   required
                 />
+                </div>
               </div>
 
               {/* Username */}
@@ -160,15 +207,22 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Username
                 </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
                 <input
                   type="text"
                   placeholder="Enter username"
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg 
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition duration-200"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                 />
+                </div>
               </div>
 
               {/* Password */}
@@ -177,11 +231,16 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                   Password
                 </label>
                 <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
                   <input
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter password"
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg 
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition duration-200 pr-10"
+                    className="w-full pl-10 pr-12 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -193,7 +252,7 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                   >
                     {showPassword ? (
                       <svg
-                        className="h-5 w-5 text-gray-500"
+                        className="h-5 w-5 text-gray-500 hover:text-gray-700"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -213,7 +272,7 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                       </svg>
                     ) : (
                       <svg
-                        className="h-5 w-5 text-gray-500"
+                        className="h-5 w-5 text-gray-500 hover:text-gray-700"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -228,10 +287,8 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                     )}
                   </button>
                 </div>
-                <p className="mt-2 text-sm text-gray-500">
-                  Password must contain at least 8 characters, one uppercase
-                  letter, one lowercase letter, one number, and one special
-                  character.
+                <p className="mt-2 text-xs text-gray-500">
+                  Must contain 8+ chars, uppercase, lowercase, number & special char
                 </p>
               </div>
 
@@ -240,9 +297,15 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Role
                 </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
                 <select
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg 
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition duration-200"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 appearance-none"
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value)}
                   required
@@ -254,26 +317,35 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                     </option>
                   ))}
                 </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="pt-6 border-t border-gray-200">
+            {/* Modal Footer - BERRY Style */}
+            <div className="pt-6 border-t border-gray-200 mt-6">
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
                 <button
                   type="button"
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg 
-                  hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-200"
-                  onClick={onClose}
+                  className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg 
+                  hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition duration-200"
+                  onClick={handleClose}
                   disabled={isSubmitting}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg 
-                  hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200 
+                  className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white rounded-lg 
+                  focus:outline-none focus:ring-2 focus:ring-offset-2 transition duration-200 shadow-sm hover:shadow-md
                   disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: '#2196f3' }}
+                  onMouseEnter={(e) => !isSubmitting && (e.target.style.backgroundColor = '#1976d2')}
+                  onMouseLeave={(e) => !isSubmitting && (e.target.style.backgroundColor = '#2196f3')}
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
@@ -300,7 +372,7 @@ const CreateUserModal = ({ onClose, onCreateUser, currentUserRole }) => {
                       Creating...
                     </div>
                   ) : (
-                    "Create User"
+                    "Submit"
                   )}
                 </button>
               </div>

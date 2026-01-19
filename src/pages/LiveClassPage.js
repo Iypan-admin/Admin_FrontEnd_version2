@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../components/Navbar';
-import { getTodayLiveClasses, getAllClasses, getBatchById } from '../services/Api';
+import AcademicNotificationBell from '../components/AcademicNotificationBell';
+import { getTodayLiveClasses, getAllClasses, getBatchById, getEnrolledStudentsByBatch, getCurrentUserProfile } from '../services/Api';
 import { Video, ExternalLink, Clock, Users, BookOpen, X, GraduationCap, Search, Filter, Calendar, History, Download } from 'lucide-react';
 
 function LiveClassPage() {
@@ -18,10 +19,123 @@ function LiveClassPage() {
   
   // Batch details modal state
   const [modalOpen, setModalOpen] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [batchStudents, setBatchStudents] = useState([]);
   const [loadingBatchDetails, setLoadingBatchDetails] = useState(false);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  
+  // BERRY style states
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+  
+  // Get current user's name from token
+  const token = localStorage.getItem('token');
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const tokenFullName = decodedToken?.full_name || null;
+  
+  // Helper function to check if a name is a full name (has spaces) vs username
+  const isFullName = (name) => {
+    if (!name || name.trim() === '') return false;
+    return name.trim().includes(' ');
+  };
+  
+  // Get display name - ONLY show full name, never username
+  const getDisplayName = () => {
+    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
+      return tokenFullName;
+    }
+    if (tokenFullName && tokenFullName.trim() !== '') {
+      return tokenFullName;
+    }
+    return "Academic Coordinator";
+  };
+
+  // Mobile and sidebar handling
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  // Toggle mobile menu
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+  };
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle();
+    
+    return () => {
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
+  }, []);
+
+  // Fetch user profile picture on component mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfilePictureUrl(response.data.profile_picture || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  // Modal visibility animation
+  useEffect(() => {
+    if (modalOpen) {
+      setTimeout(() => setIsModalVisible(true), 10);
+    }
+  }, [modalOpen]);
+
+  // Body scroll lock when modal is visible
+  useEffect(() => {
+    if (isModalVisible) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isModalVisible]);
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -75,12 +189,11 @@ function LiveClassPage() {
   const handleBatchClick = async (batchId, batchName) => {
     try {
       setModalOpen(true);
+      setIsModalVisible(true);
       setLoadingBatchDetails(true);
       setLoadingStudents(true);
       setSelectedBatch(null);
       setBatchStudents([]);
-
-      const token = localStorage.getItem('token');
       
       // Fetch batch details and students in parallel
       const [batchResponse, studentsResponse] = await Promise.all([
@@ -88,11 +201,7 @@ function LiveClassPage() {
           console.error('Error fetching batch details:', err);
           return null;
         }),
-        fetch(`http://localhost:3008/api/students/batch/${batchId}`, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }).then(res => res.ok ? res.json() : { data: [] }).catch(err => {
+        getEnrolledStudentsByBatch(batchId).catch(err => {
           console.error('Error fetching students:', err);
           return { data: [] };
         })
@@ -119,9 +228,10 @@ function LiveClassPage() {
         }
       }
 
-      // Set students
-      if (studentsResponse && studentsResponse.data) {
-        setBatchStudents(studentsResponse.data);
+      // Set students - handle both array and wrapped response
+      if (studentsResponse) {
+        const studentsData = Array.isArray(studentsResponse) ? studentsResponse : (studentsResponse.data || []);
+        setBatchStudents(studentsData);
       }
     } catch (error) {
       console.error('Error loading batch details:', error);
@@ -129,6 +239,15 @@ function LiveClassPage() {
       setLoadingBatchDetails(false);
       setLoadingStudents(false);
     }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalVisible(false);
+    setTimeout(() => {
+      setModalOpen(false);
+      setSelectedBatch(null);
+      setBatchStudents([]);
+    }, 300);
   };
 
   const formatPhone = (phone) => {
@@ -203,6 +322,93 @@ function LiveClassPage() {
       const classYear = date.getFullYear().toString();
       return classMonth === month && classYear === year;
     });
+  };
+
+  // Pagination logic
+  const getFilteredClasses = () => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Get classes based on active tab
+    let classesToFilter = activeTab === 'today' 
+      ? liveClasses 
+      : allClasses.filter(c => c.date < today);
+    
+    // Apply search filters
+    let filtered = classesToFilter.filter(classItem => {
+      const batchMatch = !searchBatchName || 
+        (classItem.batch_name && classItem.batch_name.toLowerCase().includes(searchBatchName.toLowerCase()));
+      const teacherMatch = !searchTeacherName || 
+        (classItem.tutor_name && classItem.tutor_name.toLowerCase().includes(searchTeacherName.toLowerCase()));
+      
+      return batchMatch && teacherMatch;
+    });
+
+    // Apply month filter for history tab
+    if (activeTab === 'history' && selectedMonth && selectedYear) {
+      filtered = filterClassesByMonth(filtered, selectedMonth, selectedYear);
+    }
+
+    return filtered;
+  };
+
+  // Calculate history classes count (past dates only, not today)
+  const getHistoryClassesCount = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const historyClasses = allClasses.filter(c => c.date < today);
+    return historyClasses.length;
+  };
+
+  const filteredClasses = getFilteredClasses();
+  const historyClassesCount = getHistoryClassesCount();
+  const totalPages = Math.ceil(filteredClasses.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedClasses = filteredClasses.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change or tab changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchBatchName, searchTeacherName, selectedMonth, selectedYear, activeTab]);
+
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
   };
 
   // Download handlers
@@ -298,11 +504,13 @@ function LiveClassPage() {
     downloadCSV(filtered, `class_history_teacher_${searchTeacherName.replace(/[^a-z0-9]/gi, '_')}_${selectedMonth}_${selectedYear}_${new Date().toISOString().split('T')[0]}.csv`);
   };
 
-  useEffect(() => {
-    const fetchClasses = async () => {
+  // Fetch classes with background polling
+  const fetchClasses = useCallback(async (isInitialLoad = false) => {
       try {
+      if (isInitialLoad) {
         setLoading(true);
-        const token = localStorage.getItem('token');
+      }
+      setError(null);
         
         // Fetch both today's classes and all classes
         const [todayData, allData] = await Promise.all([
@@ -318,86 +526,170 @@ function LiveClassPage() {
         
         setLiveClasses(todayData || []);
         setAllClasses(allData || []);
-        setError(null);
       } catch (err) {
         console.error('Error fetching classes:', err);
         setError(err.message || 'Failed to load classes');
       } finally {
+      if (isInitialLoad) {
         setLoading(false);
       }
-    };
+    }
+  }, [token]);
 
-    fetchClasses();
+  useEffect(() => {
+    // Initial load
+    fetchClasses(true);
     
-    // Refresh every 5 minutes (only for today's classes)
-    const interval = setInterval(async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const todayData = await getTodayLiveClasses(token);
-        setLiveClasses(todayData || []);
-      } catch (err) {
-        console.error('Error refreshing live classes:', err);
-      }
-    }, 5 * 60 * 1000);
+    // Background polling every 5 seconds
+    const interval = setInterval(() => {
+      fetchClasses(false);
+    }, 5000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchClasses]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <Navbar />
-      
-      {/* Main Content Area */}
-      <div className="flex-1 lg:ml-64 h-screen overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
-        <div className="p-3 sm:p-4 lg:p-6 xl:p-8 min-h-full">
-          <div className="mt-16 lg:mt-0">
-            <div className="max-w-7xl mx-auto">
-              {/* Enhanced Header */}
-              <div className="mb-4 sm:mb-6">
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+        {/* Top Header Bar - BERRY Style */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
                 <div className="flex items-center justify-between">
+              {/* Left: Hamburger Menu & Title */}
                   <div className="flex items-center space-x-3 sm:space-x-4">
-                    <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl shadow-lg">
-                      <Video className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                {isMobile && (
+                  <button
+                    onClick={toggleMobileMenu}
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                )}
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #3b82f6, #2563eb)' }}>
+                    <Video className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                        Live Classes
-                      </h1>
-                      <p className="text-sm sm:text-base text-gray-600 mt-1">
+                    <h1 className="text-lg sm:text-xl font-bold text-gray-900">Live Classes</h1>
+                    <p className="text-xs text-gray-500 mt-0.5">
                         {activeTab === 'today' 
-                          ? "Monitor today's active classes across all batches"
-                          : "View all classes history across all batches"}
+                        ? "Monitor today's active classes"
+                        : "View all classes history"}
                       </p>
+                  </div>
                     </div>
                   </div>
                   
-                  {!loading && activeTab === 'today' && liveClasses.length > 0 && (
-                    <div className="flex items-center space-x-2 bg-green-100 px-3 py-1.5 rounded-full">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-green-700 text-sm font-semibold">
-                        {liveClasses.length} Live Class{liveClasses.length > 1 ? 'es' : ''}
-                      </span>
+              {/* Right: Notifications, Profile */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                {/* Notifications */}
+                <AcademicNotificationBell />
+
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-md cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
+                        {getDisplayName()?.charAt(0).toUpperCase() || "A"}
                     </div>
+                  )}
+                  </button>
+
+                  {/* Profile Dropdown Menu */}
+                  {isProfileDropdownOpen && (
+                    <>
+                      {/* Backdrop */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      ></div>
+                      
+                      {/* Dropdown Box */}
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        {/* Header Section */}
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="py-2">
+                          {/* Account Settings */}
+                          <button
+                            onClick={() => {
+                              window.location.href = '/academic-coordinator/settings';
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+
+                          {/* Logout */}
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem("token");
+                              window.location.href = "/login";
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
+            </div>
+                </div>
+              </div>
 
-              {/* Tab Navigation */}
+        {/* Main Content */}
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+
+            {/* Tab Navigation - BERRY Style */}
               <div className="mb-6">
-                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-1">
+              <div className="bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
                   <nav className="flex space-x-1" aria-label="Tabs">
                     <button
                       onClick={() => setActiveTab('today')}
                       className={`${
                         activeTab === 'today'
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                        ? 'bg-blue-600 text-white shadow-sm'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                      } flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center transition-all duration-200`}
+                    } flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center transition-colors`}
+                    style={activeTab === 'today' ? { backgroundColor: '#2196f3' } : {}}
                     >
                       <Calendar className="h-4 w-4 mr-2" />
                       Today's Classes
                       {!loading && liveClasses.length > 0 && (
-                        <span className="ml-2 bg-white/20 text-white px-2 py-0.5 rounded-full text-xs font-bold">
+                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+                        activeTab === 'today' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}>
                           {liveClasses.length}
                         </span>
                       )}
@@ -406,15 +698,18 @@ function LiveClassPage() {
                       onClick={() => setActiveTab('history')}
                       className={`${
                         activeTab === 'history'
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                        ? 'bg-blue-600 text-white shadow-sm'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                      } flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center transition-all duration-200`}
+                    } flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center transition-colors`}
+                    style={activeTab === 'history' ? { backgroundColor: '#2196f3' } : {}}
                     >
                       <History className="h-4 w-4 mr-2" />
                       History
-                      {!loading && allClasses.length > 0 && (
-                        <span className="ml-2 bg-white/20 text-white px-2 py-0.5 rounded-full text-xs font-bold">
-                          {allClasses.length}
+                    {!loading && historyClassesCount > 0 && (
+                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+                        activeTab === 'history' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {historyClassesCount}
                         </span>
                       )}
                     </button>
@@ -422,43 +717,43 @@ function LiveClassPage() {
                 </div>
               </div>
 
-              {/* Advanced Filter and Search */}
-              <div className="mb-6 bg-white rounded-xl shadow-lg border border-gray-100 p-4 sm:p-6">
+            {/* Advanced Filter and Search - BERRY Style */}
+            <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center mb-4">
                   <Filter className="w-5 h-5 text-blue-600 mr-2" />
-                  <h3 className="text-lg font-semibold text-gray-900">Advanced Filter & Search</h3>
+                <h3 className="text-base font-semibold text-gray-900">Filter & Search</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Batch Name Search */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Search by Batch Name
                     </label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <input
                         type="text"
                         placeholder="Enter batch name..."
                         value={searchBatchName}
                         onChange={(e) => setSearchBatchName(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
                       />
                     </div>
                   </div>
                   
                   {/* Teacher Name Search */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Search by Teacher Name
                     </label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <input
                         type="text"
                         placeholder="Enter teacher name..."
                         value={searchTeacherName}
                         onChange={(e) => setSearchTeacherName(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
                       />
                     </div>
                   </div>
@@ -653,76 +948,48 @@ function LiveClassPage() {
                 </div>
               )}
 
-              {/* Filter Classes */}
-              {(() => {
-                const today = new Date().toISOString().split('T')[0];
-                
-                // Get classes based on active tab
-                // For today tab, use liveClasses directly (already filtered for today)
-                // For history tab, filter allClasses for past dates
-                let classesToFilter = activeTab === 'today' 
-                  ? liveClasses 
-                  : allClasses.filter(c => c.date < today);
-                
-                // Apply search filters
-                let filteredClasses = classesToFilter.filter(classItem => {
-                  const batchMatch = !searchBatchName || 
-                    (classItem.batch_name && classItem.batch_name.toLowerCase().includes(searchBatchName.toLowerCase()));
-                  const teacherMatch = !searchTeacherName || 
-                    (classItem.tutor_name && classItem.tutor_name.toLowerCase().includes(searchTeacherName.toLowerCase()));
-                  
-                  return batchMatch && teacherMatch;
-                });
-
-                // Apply month filter for history tab
-                if (activeTab === 'history' && selectedMonth && selectedYear) {
-                  filteredClasses = filterClassesByMonth(filteredClasses, selectedMonth, selectedYear);
-                }
-
-                return (
-                  <>
                     {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6">
-                      <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl shadow-xl p-4 sm:p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-blue-100 text-sm font-semibold mb-1">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                               {activeTab === 'today' ? 'Total Live Classes' : 'Total Classes'}
                             </p>
-                            <p className="text-white text-3xl font-bold">{filteredClasses.length}</p>
+                    <p className="text-2xl font-bold text-gray-900">{filteredClasses.length}</p>
                           </div>
-                          <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
-                            <Video className="w-8 h-8 text-white" />
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(to bottom right, #e3f2fd, #bbdefb)' }}>
+                    <Video className="w-6 h-6" style={{ color: '#2196f3' }} />
                           </div>
                         </div>
                       </div>
 
-                      <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-xl p-4 sm:p-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-green-100 text-sm font-semibold mb-1">Unique Batches</p>
-                            <p className="text-white text-3xl font-bold">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Unique Batches</p>
+                    <p className="text-2xl font-bold text-gray-900">
                               {new Set(filteredClasses.map(c => c.batch_id)).size}
                             </p>
                           </div>
-                          <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
-                            <Users className="w-8 h-8 text-white" />
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-green-50">
+                    <Users className="w-6 h-6 text-green-600" />
                           </div>
                         </div>
                       </div>
 
-                      <div className="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl shadow-xl p-4 sm:p-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-purple-100 text-sm font-semibold mb-1">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                               {activeTab === 'today' ? 'Active Tutors' : 'Total Tutors'}
                             </p>
-                            <p className="text-white text-3xl font-bold">
+                    <p className="text-2xl font-bold text-gray-900">
                               {new Set(filteredClasses.map(c => c.tutor_name).filter(Boolean)).size}
                             </p>
                           </div>
-                          <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
-                            <BookOpen className="w-8 h-8 text-white" />
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-purple-50">
+                    <BookOpen className="w-6 h-6 text-purple-600" />
                           </div>
                         </div>
                       </div>
@@ -730,31 +997,31 @@ function LiveClassPage() {
 
                     {/* Error Display */}
                     {error && (
-                      <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">
+              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6">
                         <div className="flex items-center">
                           <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                           </svg>
-                          <span className="font-medium">{error}</span>
+                  <span className="font-medium text-sm">{error}</span>
                         </div>
                       </div>
                     )}
 
                     {/* Loading State */}
                     {loading ? (
-                      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-12 text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600 font-medium">Loading classes...</p>
+              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600 font-medium text-sm">Loading classes...</p>
                       </div>
                     ) : filteredClasses.length === 0 ? (
-                      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-12 text-center">
-                        <div className="mx-auto w-24 h-24 bg-gradient-to-r from-gray-100 to-blue-100 rounded-full flex items-center justify-center mb-6">
-                          <Video className="w-12 h-12 text-gray-400" />
+              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <Video className="w-8 h-8 text-gray-400" />
                         </div>
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
                           {activeTab === 'today' ? 'No Live Classes Today' : 'No Classes Found'}
                         </h3>
-                        <p className="text-gray-500 max-w-md mx-auto">
+                <p className="text-gray-500 text-sm max-w-md mx-auto">
                           {activeTab === 'today' 
                             ? "There are no scheduled classes for today. Check back later or view the schedule."
                             : (searchBatchName || searchTeacherName)
@@ -763,66 +1030,63 @@ function LiveClassPage() {
                         </p>
                       </div>
                     ) : (
-                      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-                        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-6 py-4 border-b border-gray-200">
-                          <h2 className="text-xl font-bold text-white">
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                  <h2 className="text-lg font-bold text-gray-900">
                             {activeTab === 'today' ? "Today's Live Classes" : "Class History"}
                           </h2>
-                          <p className="text-blue-100 text-sm">
+                  <p className="text-xs text-gray-500 mt-1">
                             {filteredClasses.length} class{filteredClasses.length > 1 ? 'es' : ''} found
                             {(searchBatchName || searchTeacherName) && ' (filtered)'}
                           </p>
                         </div>
                         <div className="overflow-x-auto">
-                          <div className="max-h-[600px] overflow-y-auto">
                             <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50 sticky top-0 z-10">
+                              <thead className="bg-gray-50">
                                 <tr>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">S.No</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch ID</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch Name</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Name</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tutor Name</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Time</th>
-                                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Class Link</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">S.No</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Batch Name</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Course Name</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Tutor Name</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Date</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Time</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">Class Link</th>
                                 </tr>
                               </thead>
                               <tbody className="bg-white divide-y divide-gray-100">
-                                {filteredClasses.map((classItem, index) => (
-                                  <tr key={classItem.meet_id} className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200">
-                                    <td className="px-4 py-4 text-sm font-medium text-gray-900">{index + 1}</td>
-                                    <td className="px-4 py-4 text-sm font-mono text-blue-600">{classItem.batch_id?.substring(0, 8)}...</td>
-                                    <td className="px-4 py-4 text-sm">
+                                {paginatedClasses.map((classItem, index) => (
+                                  <tr key={classItem.meet_id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{startIndex + index + 1}</td>
+                                    <td className="px-6 py-4 text-sm">
                                       <button
                                         onClick={() => handleBatchClick(classItem.batch_id, classItem.batch_name)}
-                                        className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200 text-left"
+                                        className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left"
                                       >
                                         {classItem.batch_name || 'N/A'}
                                       </button>
                                     </td>
-                                    <td className="px-4 py-4 text-sm text-gray-600">{classItem.course_name || 'N/A'}</td>
-                                    <td className="px-4 py-4 text-sm text-gray-600">{classItem.tutor_name || 'N/A'}</td>
-                                    <td className="px-4 py-4 text-sm text-gray-600">{formatDate(classItem.date)}</td>
-                                    <td className="px-4 py-4 text-sm font-medium text-purple-600">
+                                    <td className="px-6 py-4 text-sm text-gray-700">{classItem.course_name || 'N/A'}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700">{classItem.tutor_name || 'N/A'}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700">{formatDate(classItem.date)}</td>
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-700">
                                       <div className="flex items-center space-x-1">
-                                        <Clock className="w-4 h-4" />
+                                        <Clock className="w-4 h-4 text-gray-400" />
                                         <span>{formatTime(classItem.class_time)}</span>
                                       </div>
                                     </td>
-                                    <td className="px-4 py-4 text-sm">
+                                    <td className="px-6 py-4 text-sm">
                                       {classItem.class_link ? (
                                         <a
                                           href={cleanMeetUrl(classItem.class_link)}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 text-xs font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
                                         >
-                                          <ExternalLink className="w-4 h-4 mr-2" />
-                                          {activeTab === 'today' ? 'Join Class' : 'View Link'}
+                                          <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                                          {activeTab === 'today' ? 'Join' : 'View'}
                                         </a>
                                       ) : (
-                                        <span className="text-gray-400 text-xs">No link available</span>
+                                        <span className="text-gray-400 text-xs">No link</span>
                                       )}
                                     </td>
                                   </tr>
@@ -830,72 +1094,144 @@ function LiveClassPage() {
                               </tbody>
                             </table>
                           </div>
+
+                {/* Pagination */}
+                {filteredClasses.length > 0 && (
+                  <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                    {/* Left: Showing entries info */}
+                    <div className="text-sm text-gray-500">
+                      Showing {startIndex + 1} to {Math.min(endIndex, filteredClasses.length)} of {filteredClasses.length} entries
+                    </div>
+
+                    {/* Right: Pagination buttons */}
+                    <div className="flex items-center gap-2">
+                      {/* Previous button */}
+                      <button
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === 1
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+
+                      {/* Page numbers */}
+                      {getPageNumbers().map((page, idx) => {
+                        if (page === '...') {
+                          return (
+                            <span key={`ellipsis-${idx}`} className="px-3 py-2 text-gray-500">
+                              ...
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              currentPage === page
+                                ? 'text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                            }`}
+                            style={currentPage === page ? { backgroundColor: '#2196f3' } : {}}
+                          >
+                            {page}
+                          </button>
+                        );
+                      })}
+
+                      {/* Next button */}
+                      <button
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === totalPages
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
                         </div>
                       </div>
                     )}
-                  </>
-                );
-              })()}
             </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Batch Details Modal */}
+      {/* Batch Details Modal - BERRY Style Right-Side Slide-In */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setModalOpen(false)}>
+        <div 
+          className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${isModalVisible ? 'opacity-100' : 'opacity-0'}`}
+          onClick={handleCloseModal}
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+        >
           <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[32rem] lg:w-[36rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto ${isModalVisible ? 'translate-x-0' : 'translate-x-full'}`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4 shadow-sm">
               <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #3b82f6, #2563eb)' }}>
+                    <BookOpen className="w-6 h-6 text-white" />
+                  </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-white mb-1">Batch Details</h2>
+                    <h2 className="text-lg font-bold text-gray-900">Batch Details</h2>
                   {selectedBatch?.batch_name && (
-                    <p className="text-blue-100 text-sm">{selectedBatch.batch_name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{selectedBatch.batch_name}</p>
                   )}
+                  </div>
                 </div>
                 <button
-                  onClick={() => setModalOpen(false)}
-                  className="text-white hover:bg-white/20 p-2 rounded-lg transition-colors"
+                  onClick={handleCloseModal}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* Content */}
+            <div className="px-6 py-6 overflow-y-auto">
               {/* Batch Information Cards */}
               {loadingBatchDetails ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                 </div>
               ) : selectedBatch && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-1 gap-3 mb-6">
                   {/* Batch Name */}
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                     <div className="flex items-center space-x-3">
-                      <div className="bg-blue-600 p-2 rounded-lg">
-                        <BookOpen className="w-5 h-5 text-white" />
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-100">
+                        <BookOpen className="w-4 h-4 text-blue-600" />
                       </div>
                       <div>
-                        <p className="text-xs text-gray-600 uppercase">Batch Name</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Batch Name</p>
                         <p className="text-sm font-semibold text-gray-900">{selectedBatch.batch_name || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Course Name */}
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                     <div className="flex items-center space-x-3">
-                      <div className="bg-green-600 p-2 rounded-lg">
-                        <GraduationCap className="w-5 h-5 text-white" />
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-100">
+                        <GraduationCap className="w-4 h-4 text-green-600" />
                       </div>
                       <div>
-                        <p className="text-xs text-gray-600 uppercase">Course</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Course</p>
                         <p className="text-sm font-semibold text-gray-900">{selectedBatch.course_name || 'N/A'}</p>
                       </div>
                     </div>
@@ -904,8 +1240,8 @@ function LiveClassPage() {
               )}
 
               {/* Students List */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center">
                   <Users className="w-5 h-5 mr-2 text-blue-600" />
                   Enrolled Students ({batchStudents.length})
                 </h3>
@@ -917,47 +1253,35 @@ function LiveClassPage() {
                 ) : batchStudents.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Users className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>No students enrolled yet</p>
+                    <p className="text-sm">No students enrolled yet</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {batchStudents.map((student, index) => (
                       <div
                         key={student.student_id || index}
-                        className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+                        className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ background: 'linear-gradient(to bottom right, #3b82f6, #2563eb)' }}>
                               {student.name?.charAt(0)?.toUpperCase() || '?'}
                             </div>
-                            <div>
-                              <h3 className="font-semibold text-gray-900">{student.name || 'N/A'}</h3>
-                              <p className="text-sm text-gray-600">{student.email || 'N/A'}</p>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-semibold text-gray-900 text-sm truncate">{student.name || 'N/A'}</h3>
+                              <p className="text-xs text-gray-600 truncate">{student.email || 'N/A'}</p>
                               <p className="text-xs text-gray-500">{formatPhone(student.phone)}</p>
                             </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right flex-shrink-0 ml-2">
                             <div className="text-xs text-gray-500 mb-1">Registration</div>
-                            <div className="font-mono text-sm font-semibold text-blue-600">{student.registration_number || 'N/A'}</div>
+                            <div className="font-mono text-xs font-semibold text-blue-600">{student.registration_number || 'N/A'}</div>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="border-t border-gray-200 p-4 bg-gray-50">
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setModalOpen(false)}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium"
-                >
-                  Close
-                </button>
               </div>
             </div>
           </div>

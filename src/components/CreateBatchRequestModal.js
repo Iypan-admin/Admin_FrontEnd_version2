@@ -10,7 +10,7 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
     time_to: '',
     max_students: 10,
     mode: 'Offline',
-    justification: ''
+    justification: '' // Will be sent as empty string
   });
 
   const [teachers, setTeachers] = useState([]);
@@ -82,13 +82,21 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
     fetchData();
   }, []);
 
-  // Auto-fill duration when course is selected
+  // Auto-fill duration and mode when course is selected
   useEffect(() => {
     const selectedCourse = courses.find(c => c.id === formData.course_id);
     if (selectedCourse) {
       setFormData(prev => ({
         ...prev,
-        duration: selectedCourse.duration || 0
+        duration: selectedCourse.duration || 0,
+        mode: selectedCourse.mode || 'Offline' // Auto-detect mode from course
+      }));
+    } else {
+      // Reset when course is deselected
+      setFormData(prev => ({
+        ...prev,
+        duration: '',
+        mode: 'Offline'
       }));
     }
   }, [formData.course_id, courses]);
@@ -125,7 +133,15 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
 
     try {
       const token = localStorage.getItem('token');
-      await createBatchRequest(formData, token);
+      // Ensure justification is an empty string if undefined/null
+      const submitData = {
+        ...formData,
+        justification: formData.justification || '',
+        duration: formData.duration || 0,
+        max_students: formData.max_students || 10,
+        mode: formData.mode || 'Offline'
+      };
+      await createBatchRequest(submitData, token);
       onSuccess();
       onClose();
     } catch (error) {
@@ -207,24 +223,25 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
                     <option value="">Select a course</option>
                     {courses.map((course) => (
                       <option key={course.id} value={course.id}>
-                        {course.course_name} ({course.type})
+                        {course.course_name} {course.type ? `(${course.type})` : ''}
                       </option>
                     ))}
                   </select>
                 )}
               </div>
 
-              {/* Duration */}
+              {/* Duration - Auto-populated from course, read-only */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Hours)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Duration (Months) <span className="text-xs text-gray-500">(Auto-filled from course)</span>
+                </label>
                 <input
                   type="number"
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
                   value={formData.duration}
-                  onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                  required
-                  min="1"
-                  placeholder="Course duration in hours"
+                  disabled
+                  readOnly
+                  placeholder="Select a course to auto-fill duration"
                 />
               </div>
 
@@ -277,18 +294,19 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
                 )}
               </div>
 
-              {/* Mode */}
+              {/* Mode - Auto-detected from course, read-only */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
-                <select
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={formData.mode}
-                  onChange={(e) => setFormData({ ...formData, mode: e.target.value })}
-                  required
-                >
-                  <option value="Offline">Offline</option>
-                  <option value="Online">Online</option>
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mode <span className="text-xs text-gray-500">(Auto-detected from course)</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2.5 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed font-medium"
+                  value={formData.mode || 'Select a course'}
+                  disabled
+                  readOnly
+                  placeholder="Select a course to auto-detect mode"
+                />
               </div>
 
               {/* Time From */}
@@ -328,20 +346,6 @@ const CreateBatchRequestModal = ({ onClose, onSuccess }) => {
                   required
                 />
               </div>
-            </div>
-
-            {/* Justification */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Justification (Optional)
-              </label>
-              <textarea
-                value={formData.justification}
-                onChange={(e) => setFormData({ ...formData, justification: e.target.value })}
-                rows="3"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Explain why this batch is needed..."
-              />
             </div>
 
             {/* Submit Button */}

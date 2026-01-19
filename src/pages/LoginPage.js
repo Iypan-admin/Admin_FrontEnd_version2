@@ -41,21 +41,22 @@ const LoginPage = ({ setRole }) => {
     return () => clearInterval(refreshInterval);
   }, []);
 
-  // Enhanced auto-scroll effect for desktop announcements - Infinite continuous scroll (bottom to top)
+  // Enhanced auto-scroll effect for desktop announcements - Infinite continuous scroll
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer || events.length === 0) return;
 
     let scrollPosition = 0;
     let isScrolling = true;
-    const scrollSpeed = 0.5; // Smooth scroll speed
-    let singleContentHeight = 0;
+    const scrollSpeed = 0.8; // Smooth scroll speed
+    let firstSetHeight = 0;
+    let animationFrameId = null;
 
     // Initialize: measure the height of first content set
     const initializeScroll = () => {
       const firstContentSet = scrollContainer.querySelector('div > div:first-child');
       if (firstContentSet) {
-        singleContentHeight = firstContentSet.scrollHeight;
+        firstSetHeight = firstContentSet.scrollHeight;
         // Start from top
         scrollContainer.scrollTop = 0;
         scrollPosition = 0;
@@ -63,23 +64,31 @@ const LoginPage = ({ setRole }) => {
     };
 
     // Wait a bit for DOM to render
-    setTimeout(initializeScroll, 100);
+    setTimeout(initializeScroll, 200);
 
     const autoScroll = () => {
-      if (!isScrolling || singleContentHeight === 0) return;
+      if (!isScrolling || firstSetHeight === 0) {
+        animationFrameId = requestAnimationFrame(autoScroll);
+        return;
+      }
       
       // Scroll from top to bottom (content moves up)
       scrollPosition += scrollSpeed;
       
       // When we've scrolled through one set, reset to top seamlessly
       // Since we have duplicated content, the reset is invisible
-      if (scrollPosition >= singleContentHeight) {
+      if (scrollPosition >= firstSetHeight) {
         scrollPosition = 0;
         scrollContainer.scrollTop = 0;
       } else {
         scrollContainer.scrollTop = scrollPosition;
       }
+      
+      animationFrameId = requestAnimationFrame(autoScroll);
     };
+
+    // Start scrolling
+    animationFrameId = requestAnimationFrame(autoScroll);
 
     // Pause on hover
     const handleMouseEnter = () => {
@@ -93,16 +102,16 @@ const LoginPage = ({ setRole }) => {
     scrollContainer.addEventListener('mouseenter', handleMouseEnter);
     scrollContainer.addEventListener('mouseleave', handleMouseLeave);
 
-    const interval = setInterval(autoScroll, 20); // 50 FPS for ultra-smooth animation
-
     return () => {
-      clearInterval(interval);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       scrollContainer.removeEventListener('mouseenter', handleMouseEnter);
       scrollContainer.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, [events]); // Re-run when events change
 
-  // Auto-scroll effect for mobile announcement modal - Infinite continuous scroll (bottom to top)
+  // Auto-scroll effect for mobile announcement modal - Infinite continuous scroll
   useEffect(() => {
     if (!showMobileAnnouncement || events.length === 0) return;
     
@@ -111,14 +120,15 @@ const LoginPage = ({ setRole }) => {
 
     let scrollPosition = 0;
     let isScrolling = true;
-    const scrollSpeed = 0.4; // Smooth scroll speed for mobile
-    let singleContentHeight = 0;
+    const scrollSpeed = 0.6; // Smooth scroll speed for mobile
+    let firstSetHeight = 0;
+    let animationFrameId = null;
 
     // Initialize: measure the height of first content set
     const initializeScroll = () => {
       const firstContentSet = mobileScrollContainer.querySelector('div > div:first-child');
       if (firstContentSet) {
-        singleContentHeight = firstContentSet.scrollHeight;
+        firstSetHeight = firstContentSet.scrollHeight;
         // Start from top
         mobileScrollContainer.scrollTop = 0;
         scrollPosition = 0;
@@ -126,22 +136,30 @@ const LoginPage = ({ setRole }) => {
     };
 
     // Wait a bit for DOM to render
-    setTimeout(initializeScroll, 100);
+    setTimeout(initializeScroll, 200);
 
     const autoScroll = () => {
-      if (!isScrolling || !showMobileAnnouncement || singleContentHeight === 0) return;
+      if (!isScrolling || !showMobileAnnouncement || firstSetHeight === 0) {
+        animationFrameId = requestAnimationFrame(autoScroll);
+        return;
+      }
       
       // Scroll from top to bottom (content moves up)
       scrollPosition += scrollSpeed;
       
       // When we've scrolled through one set, reset to top seamlessly
-      if (scrollPosition >= singleContentHeight) {
+      if (scrollPosition >= firstSetHeight) {
         scrollPosition = 0;
         mobileScrollContainer.scrollTop = 0;
       } else {
         mobileScrollContainer.scrollTop = scrollPosition;
       }
+      
+      animationFrameId = requestAnimationFrame(autoScroll);
     };
+
+    // Start scrolling
+    animationFrameId = requestAnimationFrame(autoScroll);
 
     // Pause on touch start (mobile)
     const handleTouchStart = () => {
@@ -157,10 +175,10 @@ const LoginPage = ({ setRole }) => {
     mobileScrollContainer.addEventListener('touchstart', handleTouchStart);
     mobileScrollContainer.addEventListener('touchend', handleTouchEnd);
 
-    const interval = setInterval(autoScroll, 30); // Smooth animation for mobile
-
     return () => {
-      clearInterval(interval);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       mobileScrollContainer.removeEventListener('touchstart', handleTouchStart);
       mobileScrollContainer.removeEventListener('touchend', handleTouchEnd);
     };
@@ -175,8 +193,41 @@ const LoginPage = ({ setRole }) => {
       case 'training': return '🎓';
       case 'workshop': return '🔧';
       case 'conference': return '🎤';
+      case 'leave': return '🏖️';
       case 'general': return '📅';
       default: return '📅';
+    }
+  };
+
+  const getEventTypeLabel = (eventType) => {
+    if (!eventType) return 'Event';
+    return eventType.charAt(0).toUpperCase() + eventType.slice(1);
+  };
+
+  const getEventTypeLabelColor = (eventType) => {
+    switch (eventType) {
+      case 'meeting': return 'bg-blue-600/20 text-blue-700 border-blue-300/50';
+      case 'exam': return 'bg-red-600/20 text-red-700 border-red-300/50';
+      case 'holiday': return 'bg-green-600/20 text-green-700 border-green-300/50';
+      case 'training': return 'bg-purple-600/20 text-purple-700 border-purple-300/50';
+      case 'workshop': return 'bg-orange-600/20 text-orange-700 border-orange-300/50';
+      case 'conference': return 'bg-indigo-600/20 text-indigo-700 border-indigo-300/50';
+      case 'general': return 'bg-gray-600/20 text-gray-700 border-gray-300/50';
+      default: return 'bg-gray-600/20 text-gray-700 border-gray-300/50';
+    }
+  };
+
+  const getEventTypeLabelColorDark = (eventType) => {
+    // For dark backgrounds (desktop announcements)
+    switch (eventType) {
+      case 'meeting': return 'bg-blue-600/30 text-blue-200 border-blue-400/30';
+      case 'exam': return 'bg-red-600/30 text-red-200 border-red-400/30';
+      case 'holiday': return 'bg-green-600/30 text-green-200 border-green-400/30';
+      case 'training': return 'bg-purple-600/30 text-purple-200 border-purple-400/30';
+      case 'workshop': return 'bg-orange-600/30 text-orange-200 border-orange-400/30';
+      case 'conference': return 'bg-indigo-600/30 text-indigo-200 border-indigo-400/30';
+      case 'general': return 'bg-gray-600/30 text-gray-200 border-gray-400/30';
+      default: return 'bg-gray-600/30 text-gray-200 border-gray-400/30';
     }
   };
 
@@ -195,14 +246,14 @@ const LoginPage = ({ setRole }) => {
 
   const getEventTypeIconColor = (eventType) => {
     switch (eventType) {
-      case 'meeting': return 'bg-blue-500';
-      case 'exam': return 'bg-red-500';
-      case 'holiday': return 'bg-green-500';
-      case 'training': return 'bg-purple-500';
-      case 'workshop': return 'bg-orange-500';
-      case 'conference': return 'bg-indigo-500';
-      case 'general': return 'bg-gray-500';
-      default: return 'bg-gray-500';
+      case 'meeting': return 'bg-blue-600';
+      case 'exam': return 'bg-red-600';
+      case 'holiday': return 'bg-green-600';
+      case 'training': return 'bg-purple-600';
+      case 'workshop': return 'bg-orange-600';
+      case 'conference': return 'bg-indigo-600';
+      case 'general': return 'bg-gray-600';
+      default: return 'bg-gray-600';
     }
   };
 
@@ -313,10 +364,36 @@ const LoginPage = ({ setRole }) => {
             overflow: hidden;
           }
         }
+        /* Slide in from right animation */
+        @keyframes slideInFromRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        @keyframes slideOutToRight {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+        }
       `}</style>
       <div className="min-h-screen bg-white flex flex-col md:flex-row relative">
-      {/* Left Panel - 40% - Branding & Announcements */}
-      <div className="w-full md:w-2/5 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 text-white relative overflow-hidden hidden md:flex flex-col md:h-screen">
+      {/* Left Panel - 40% - Branding & Announcements - BERRY Style */}
+      <div 
+        className="w-full md:w-2/5 text-white relative overflow-hidden hidden md:flex flex-col md:h-screen"
+        style={{
+          background: "linear-gradient(to right, #2196f3, #1976d2)"
+        }}
+      >
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
@@ -345,11 +422,11 @@ const LoginPage = ({ setRole }) => {
             </div>
           </div>
 
-          {/* Announcements Section */}
+          {/* Announcements Section - BERRY Style */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="mb-3 md:mb-4">
               <div className="flex items-center space-x-2 md:space-x-3 mb-1.5 md:mb-2">
-                <div className="w-8 h-8 md:w-10 md:h-10 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                <div className="w-8 h-8 md:w-10 md:h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-md border border-white/30">
                   <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                   </svg>
@@ -361,10 +438,10 @@ const LoginPage = ({ setRole }) => {
               </div>
             </div>
 
-            {/* Announcements Scroll Container */}
-            <div className="flex-1 relative overflow-hidden rounded-xl bg-white/5 backdrop-blur-sm border border-white/10">
+            {/* Announcements Scroll Container - BERRY Style */}
+            <div className="flex-1 relative overflow-hidden rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 shadow-md">
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent z-10 pointer-events-none" />
-              <div className="h-full overflow-y-auto scrollbar-hide p-3 md:p-4 lg:p-4" ref={scrollContainerRef} style={{ scrollBehavior: 'auto' }}>
+              <div className="h-full overflow-y-auto scrollbar-hide p-3 md:p-4 lg:p-4" ref={scrollContainerRef} style={{ scrollBehavior: 'auto', overflowY: 'auto' }}>
                 {eventsLoading ? (
                   <div className="flex items-center justify-center py-6 md:py-8">
                     <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-b-2 border-white"></div>
@@ -375,13 +452,20 @@ const LoginPage = ({ setRole }) => {
                     {/* First set of events */}
                     <div className="space-y-2 md:space-y-3">
                       {events.map((event, index) => (
-                        <div key={`first-${event.id || index}`} className={`bg-white/10 backdrop-blur-sm rounded-lg p-2.5 md:p-3 border border-white/10 hover:bg-white/15 transition-colors`}>
+                        <div key={`first-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
                           <div className="flex items-start gap-2 md:gap-3">
-                            <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0`}>
+                            <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-white text-xs md:text-sm mb-0.5 md:mb-1">{event.title}</h4>
+                              <div className="flex items-center gap-2 mb-0.5 md:mb-1">
+                                <h4 className="font-semibold text-white text-xs md:text-sm">{event.title}</h4>
+                                {event.event_type && (
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColorDark(event.event_type)} text-[9px] md:text-[10px] font-medium rounded`}>
+                                    {getEventTypeLabel(event.event_type)}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-blue-200 text-[10px] md:text-xs line-clamp-2 mb-1.5 md:mb-2">{event.description || 'No description available'}</p>
                               <div className="flex items-center gap-1.5 md:gap-2 text-blue-300 text-[10px] md:text-xs">
                                 <span>{formatEventDate(event.event_start_date)}</span>
@@ -397,13 +481,20 @@ const LoginPage = ({ setRole }) => {
                     {/* Duplicated set for seamless loop */}
                     <div className="space-y-2 md:space-y-3">
                       {events.map((event, index) => (
-                        <div key={`second-${event.id || index}`} className={`bg-white/10 backdrop-blur-sm rounded-lg p-2.5 md:p-3 border border-white/10 hover:bg-white/15 transition-colors`}>
+                        <div key={`second-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
                           <div className="flex items-start gap-2 md:gap-3">
-                            <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0`}>
+                            <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-white text-xs md:text-sm mb-0.5 md:mb-1">{event.title}</h4>
+                              <div className="flex items-center gap-2 mb-0.5 md:mb-1">
+                                <h4 className="font-semibold text-white text-xs md:text-sm">{event.title}</h4>
+                                {event.event_type && (
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColorDark(event.event_type)} text-[9px] md:text-[10px] font-medium rounded`}>
+                                    {getEventTypeLabel(event.event_type)}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-blue-200 text-[10px] md:text-xs line-clamp-2 mb-1.5 md:mb-2">{event.description || 'No description available'}</p>
                               <div className="flex items-center gap-1.5 md:gap-2 text-blue-300 text-[10px] md:text-xs">
                                 <span>{formatEventDate(event.event_start_date)}</span>
@@ -419,7 +510,7 @@ const LoginPage = ({ setRole }) => {
                   </>
                 ) : (
                   <div className="text-center py-6 md:py-8">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-2 md:mb-3">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2 md:mb-3 shadow-md border border-white/30">
                       <svg className="w-5 h-5 md:w-6 md:h-6 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
@@ -440,71 +531,67 @@ const LoginPage = ({ setRole }) => {
         <div className="w-full max-w-md mx-auto flex-1 flex flex-col justify-center">
           {/* Mobile Logo & Header - Enhanced Design */}
           <div className="md:hidden mb-6 relative">
-            {/* Animated Background Elements */}
+            {/* Animated Background Elements - BERRY Style */}
             <div className="absolute inset-0 -z-10 overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 via-indigo-400/20 to-purple-400/20 rounded-full blur-3xl animate-pulse"></div>
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-purple-400/20 via-indigo-400/20 to-blue-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+              <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl animate-pulse"></div>
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-700/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
             </div>
             
-            {/* Logo with Enhanced Design */}
+            {/* Logo with BERRY Style Design */}
             <div className="flex justify-center mb-4">
               <div className="relative group">
-                {/* Glow Effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                {/* Glow Effect - BERRY Style */}
+                <div className="absolute inset-0 bg-blue-600 rounded-xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
                 {/* Logo Container */}
-                <div className="relative p-4 bg-gradient-to-br from-white to-gray-50 rounded-2xl border-2 border-gray-200 shadow-xl transform group-hover:scale-105 transition-transform">
+                <div className="relative p-4 bg-white rounded-xl border border-gray-200 shadow-md transform group-hover:scale-105 transition-transform">
                   <img src={Logo} alt="ISML Logo" className="w-20 h-20 object-contain" />
                 </div>
               </div>
             </div>
             
-            {/* Header Text with Enhanced Styling */}
+            {/* Header Text - BERRY Style */}
             <div className="text-center space-y-2">
-              <h1 className="text-4xl font-black mb-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg tracking-tight">
+              <h1 className="text-4xl font-black mb-2 text-gray-900 tracking-tight">
                 Welcome Back
               </h1>
               <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="h-1 w-12 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full"></div>
-                <div className="h-1 w-2 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full"></div>
-                <div className="h-1 w-12 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full"></div>
+                <div className="h-1 w-12 bg-blue-600 rounded-full"></div>
+                <div className="h-1 w-2 bg-blue-700 rounded-full"></div>
+                <div className="h-1 w-12 bg-blue-600 rounded-full"></div>
               </div>
               <p className="text-gray-600 text-sm font-medium">Sign in to continue to your portal</p>
             </div>
           </div>
 
-          {/* Desktop/Tablet Header */}
+          {/* Desktop/Tablet Header - BERRY Style */}
           <div className="hidden md:block mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
+            <h1 className="text-3xl md:text-4xl font-bold mb-2 text-gray-900">
               Welcome Back
             </h1>
             <p className="text-gray-600 text-sm md:text-base">Sign in to continue to your portal</p>
           </div>
 
-          {/* Mobile Announcement Button - Enhanced Design */}
+          {/* Mobile Announcement Button - BERRY Style */}
           <div className="md:hidden mb-6">
             <button
               onClick={() => setShowMobileAnnouncement(!showMobileAnnouncement)}
-              className="w-full relative group overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full relative group overflow-hidden rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99] bg-gradient-to-br from-blue-50 to-blue-100"
             >
-              {/* Animated Background Gradient */}
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600"></div>
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              
               {/* Content */}
               <div className="relative p-4 flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  {/* Icon Container */}
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30 shadow-lg">
+                  {/* Icon Container - BERRY Style */}
+                  <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                     </svg>
                   </div>
                   <div className="text-left">
-                    <p className="font-bold text-white text-base">Announcements</p>
-                    <p className="text-blue-100 text-sm font-medium">{events.length} updates available</p>
+                    <p className="font-bold text-gray-900 text-base">Announcements</p>
+                    <p className="text-gray-600 text-sm font-medium">{events.length} updates available</p>
                   </div>
                 </div>
-                <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
                   <svg className="w-5 h-5 text-white transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                   </svg>
@@ -513,33 +600,40 @@ const LoginPage = ({ setRole }) => {
             </button>
           </div>
 
-          {/* Login Form - Enhanced Mobile Design */}
-          <div className="bg-white rounded-3xl md:rounded-3xl shadow-2xl md:shadow-2xl border border-gray-100 md:border-gray-200 p-6 md:p-8 lg:p-10 relative overflow-hidden md:overflow-visible">
-            {/* Decorative Elements for Mobile */}
-            <div className="md:hidden absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-2xl -z-0"></div>
-            <div className="md:hidden absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-indigo-100/50 to-blue-100/50 rounded-full blur-2xl -z-0"></div>
+          {/* Login Form - BERRY Style */}
+          <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 md:p-8 lg:p-10 relative overflow-hidden">
+            {/* Decorative Elements for Mobile - BERRY Style */}
+            <div className="md:hidden absolute top-0 right-0 w-32 h-32 bg-blue-100/50 rounded-full blur-2xl -z-0"></div>
+            <div className="md:hidden absolute bottom-0 left-0 w-24 h-24 bg-blue-50/50 rounded-full blur-2xl -z-0"></div>
             <div className="relative z-10">
             <form className="space-y-5" onSubmit={handleLogin}>
           {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl shadow-sm">
               <div className="flex items-center space-x-3">
-                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-red-700 text-sm font-medium">{error}</p>
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-md">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p className="text-blue-700 text-sm font-medium">{error}</p>
               </div>
             </div>
           )}
 
-          {/* Username Input */}
+          {/* Username Input - BERRY Style */}
           <div>
-            <label htmlFor="username" className="block text-sm font-semibold text-gray-700 mb-2.5 md:mb-2">
+            <label htmlFor="username" className="block text-sm font-semibold text-gray-800 mb-2.5 md:mb-2">
               Username
             </label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-3 md:pl-3 flex items-center pointer-events-none z-10">
-                <div className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-lg flex items-center justify-center border border-blue-200/50">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div 
+                  className="w-9 h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center shadow-md"
+                  style={{
+                    background: "linear-gradient(to right, #2196f3, #1976d2)"
+                  }}
+                >
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 </div>
@@ -550,21 +644,26 @@ const LoginPage = ({ setRole }) => {
                 value={name}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="w-full pl-14 md:pl-14 pr-4 py-4 md:py-3.5 bg-gray-50 md:bg-white border-2 border-gray-200 md:border-gray-300 rounded-xl md:rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm md:text-base shadow-sm md:shadow-none"
+                className="w-full pl-14 md:pl-14 pr-4 py-4 md:py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm md:text-base shadow-sm hover:border-blue-300"
                 placeholder="Enter your username"
               />
             </div>
           </div>
 
-          {/* Password Input */}
+          {/* Password Input - BERRY Style */}
           <div>
-            <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2.5 md:mb-2">
+            <label htmlFor="password" className="block text-sm font-semibold text-gray-800 mb-2.5 md:mb-2">
               Password
             </label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-3 md:pl-3 flex items-center pointer-events-none z-10">
-                <div className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-lg flex items-center justify-center border border-indigo-200/50">
-                  <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div 
+                  className="w-9 h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center shadow-md"
+                  style={{
+                    background: "linear-gradient(to right, #2196f3, #1976d2)"
+                  }}
+                >
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                 </div>
@@ -575,7 +674,7 @@ const LoginPage = ({ setRole }) => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full pl-14 md:pl-14 pr-14 md:pr-12 py-4 md:py-3.5 bg-gray-50 md:bg-white border-2 border-gray-200 md:border-gray-300 rounded-xl md:rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm md:text-base shadow-sm md:shadow-none"
+                className="w-full pl-14 md:pl-14 pr-14 md:pr-12 py-4 md:py-3.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm md:text-base shadow-sm hover:border-blue-300"
                 placeholder="Enter your password"
               />
               <button
@@ -597,15 +696,18 @@ const LoginPage = ({ setRole }) => {
             </div>
           </div>
 
-          {/* Submit Button - Enhanced Mobile Design */}
+          {/* Submit Button - BERRY Style */}
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-4 md:py-4 rounded-2xl md:rounded-2xl text-white font-bold text-base md:text-lg transition-all duration-300 relative overflow-hidden group ${
+            className={`w-full py-4 md:py-4 rounded-xl text-white font-bold text-base md:text-lg transition-all duration-300 relative overflow-hidden group shadow-md ${
               loading
                 ? "bg-gray-400 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 shadow-xl md:shadow-xl hover:shadow-2xl md:hover:shadow-2xl transform hover:scale-[1.02] active:scale-[0.98]"
+                : "bg-blue-600 hover:bg-blue-700 hover:shadow-lg transform hover:scale-[1.01] active:scale-[0.99]"
             }`}
+            style={{
+              background: loading ? undefined : "linear-gradient(to right, #2196f3, #1976d2)"
+            }}
           >
             {/* Animated Shine Effect for Mobile */}
             {!loading && (
@@ -635,12 +737,12 @@ const LoginPage = ({ setRole }) => {
           </div>
         </div>
 
-        {/* Footer - Enhanced Mobile Design */}
+        {/* Footer - BERRY Style */}
         <div className="w-full max-w-md mx-auto mt-auto pt-6 text-center">
           <div className="md:hidden mb-4">
             <div className="flex items-center justify-center gap-2 mb-3">
               <div className="h-0.5 w-8 bg-gradient-to-r from-transparent to-gray-300"></div>
-              <div className="w-1.5 h-1.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
               <div className="h-0.5 w-8 bg-gradient-to-l from-transparent to-gray-300"></div>
             </div>
           </div>
@@ -651,15 +753,24 @@ const LoginPage = ({ setRole }) => {
       </div>
     </div>
 
-      {/* Mobile Announcement Modal */}
+      {/* Mobile Announcement Modal - BERRY Style with Slide Animation */}
       {showMobileAnnouncement && (
-        <div className="fixed inset-0 bg-black/50 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6">
-          <div className="w-full max-w-sm sm:max-w-md md:max-w-lg bg-white/95 backdrop-blur-xl border border-white/70 rounded-2xl sm:rounded-3xl shadow-2xl relative overflow-hidden">
-            {/* Mobile Announcement Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-4 sm:px-6 py-3 sm:py-4 rounded-t-2xl sm:rounded-t-3xl">
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 lg:hidden flex items-end sm:items-center justify-end p-0 sm:p-3 transition-all duration-300"
+          onClick={() => setShowMobileAnnouncement(false)}
+        >
+          <div 
+            className="w-full sm:w-[90%] md:max-w-lg h-[85vh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl bg-white shadow-md border border-gray-200 relative overflow-hidden flex flex-col transform transition-transform duration-300 ease-out"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              animation: 'slideInFromRight 0.3s ease-out'
+            }}
+          >
+            {/* Mobile Announcement Header - BERRY Style */}
+            <div className="bg-blue-600 px-4 sm:px-6 py-3 sm:py-4 sm:rounded-t-xl flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-xl sm:rounded-2xl flex items-center justify-center">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-lg flex items-center justify-center shadow-md border border-white/30">
                     <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                     </svg>
@@ -671,7 +782,7 @@ const LoginPage = ({ setRole }) => {
                 </div>
                 <button
                   onClick={() => setShowMobileAnnouncement(false)}
-                  className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                  className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-lg flex items-center justify-center hover:bg-white/30 transition-colors shadow-md border border-white/30"
                 >
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -680,32 +791,39 @@ const LoginPage = ({ setRole }) => {
               </div>
             </div>
 
-            {/* Mobile Events Container with Auto-scroll */}
-            <div className="relative h-56 sm:h-64 md:h-72 lg:h-80 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-transparent z-10 pointer-events-none" />
+            {/* Mobile Events Container with Auto-scroll - BERRY Style */}
+            <div className="relative flex-1 overflow-hidden min-h-0">
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-50/10 to-transparent z-10 pointer-events-none" />
               <div className="h-full overflow-y-auto scrollbar-hide p-4 sm:p-5 md:p-6" ref={mobileScrollContainerRef} style={{ scrollBehavior: 'auto' }}>
                 {eventsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                    <p className="text-slate-600 text-xs ml-2">Loading events...</p>
+                    <p className="text-gray-600 text-xs ml-2">Loading events...</p>
                   </div>
                 ) : events.length > 0 ? (
                   <>
                     {/* First set of events */}
                     <div className="space-y-3 sm:space-y-4">
                       {events.map((event, index) => (
-                        <div key={`mobile-first-${event.id || index}`} className={`bg-gradient-to-r ${getEventTypeColor(event.event_type)} rounded-lg p-3 border shadow-sm`}>
+                        <div key={`mobile-first-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm`}>
                           <div className="flex items-start gap-2">
-                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold`}>
+                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
                             <div className="flex-1">
-                              <h4 className="font-semibold text-slate-800 text-xs">{event.title}</h4>
-                              <p className="text-slate-600 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold text-gray-900 text-xs">{event.title}</h4>
+                                {event.event_type && (
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] font-medium rounded`}>
+                                    {getEventTypeLabel(event.event_type)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-gray-700 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
                               <div className="flex items-center gap-2 mt-1">
-                                <p className="text-slate-500 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
+                                <p className="text-gray-600 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
                                 {event.event_start_time && (
-                                  <p className="text-slate-500 text-xs font-medium">
+                                  <p className="text-gray-600 text-xs font-medium">
                                     {formatEventTime(event.event_start_time, event.event_end_time)}
                                   </p>
                                 )}
@@ -718,18 +836,25 @@ const LoginPage = ({ setRole }) => {
                     {/* Duplicated set for seamless loop */}
                     <div className="space-y-3 sm:space-y-4">
                       {events.map((event, index) => (
-                        <div key={`mobile-second-${event.id || index}`} className={`bg-gradient-to-r ${getEventTypeColor(event.event_type)} rounded-lg p-3 border shadow-sm`}>
+                        <div key={`mobile-second-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm`}>
                           <div className="flex items-start gap-2">
-                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold`}>
+                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
                             <div className="flex-1">
-                              <h4 className="font-semibold text-slate-800 text-xs">{event.title}</h4>
-                              <p className="text-slate-600 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold text-gray-900 text-xs">{event.title}</h4>
+                                {event.event_type && (
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] font-medium rounded`}>
+                                    {getEventTypeLabel(event.event_type)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-gray-700 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
                               <div className="flex items-center gap-2 mt-1">
-                                <p className="text-slate-500 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
+                                <p className="text-gray-600 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
                                 {event.event_start_time && (
-                                  <p className="text-slate-500 text-xs font-medium">
+                                  <p className="text-gray-600 text-xs font-medium">
                                     {formatEventTime(event.event_start_time, event.event_end_time)}
                                   </p>
                                 )}
@@ -742,25 +867,24 @@ const LoginPage = ({ setRole }) => {
                   </>
                 ) : (
                   <div className="text-center py-8">
-                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                      <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-200 shadow-sm">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </div>
-                    <p className="text-slate-500 text-xs">No upcoming events</p>
-                    <p className="text-slate-400 text-xs mt-1">Check back later for updates</p>
+                    <p className="text-gray-700 text-xs">No upcoming events</p>
+                    <p className="text-gray-600 text-xs mt-1">Check back later for updates</p>
                   </div>
                 )}
               </div>
               
-              {/* Mobile Auto-scroll indicator */}
+              {/* Mobile Auto-scroll indicator - BERRY Style */}
               <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-full flex items-center justify-center shadow-md animate-pulse">
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                   </svg>
                 </div>
-                <div className="absolute -top-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full animate-ping"></div>
               </div>
             </div>
           </div>

@@ -7,6 +7,7 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
     duration: 6,
     center: '',
     teacher: '',
+    assistant_tutor: '',
     course_id: '',
     time_from: '',
     time_to: '',
@@ -24,40 +25,50 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
     batch: true
   });
   const [error, setError] = useState(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch full batch details when modal opens
+  // Smooth slide-in animation and fetch batch details when modal opens
   useEffect(() => {
-    const fetchBatchDetails = async () => {
-      if (!batch || !batch.batch_id) {
-        setError('Batch ID is missing');
-        setLoading(prev => ({ ...prev, batch: false }));
-        return;
-      }
-
-      try {
-        setLoading(prev => ({ ...prev, batch: true }));
-        const token = localStorage.getItem('token');
-        const response = await getBatchById(token, batch.batch_id);
-        
-        if (response && response.success && response.data) {
-          setBatchData(response.data);
-          console.log('✅ Batch data fetched:', response.data);
-        } else {
-          // Fallback to the batch prop if API fails
-          console.warn('⚠️ API response format unexpected, using batch prop:', response);
+    if (batch && batch.batch_id) {
+      // Trigger slide-in animation after modal is shown
+      setTimeout(() => setIsVisible(true), 10);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+      
+      const fetchBatchDetails = async () => {
+        try {
+          setLoading(prev => ({ ...prev, batch: true }));
+          const token = localStorage.getItem('token');
+          const response = await getBatchById(token, batch.batch_id);
+          
+          if (response && response.success && response.data) {
+            setBatchData(response.data);
+            console.log('✅ Batch data fetched:', response.data);
+          } else {
+            // Fallback to the batch prop if API fails
+            console.warn('⚠️ API response format unexpected, using batch prop:', response);
+            setBatchData(batch);
+          }
+        } catch (error) {
+          console.error('❌ Error fetching batch details:', error);
+          // Fallback to the batch prop
           setBatchData(batch);
+          setError('Failed to fetch batch details. Using available data.');
+        } finally {
+          setLoading(prev => ({ ...prev, batch: false }));
         }
-      } catch (error) {
-        console.error('❌ Error fetching batch details:', error);
-        // Fallback to the batch prop
-        setBatchData(batch);
-        setError('Failed to fetch batch details. Using available data.');
-      } finally {
-        setLoading(prev => ({ ...prev, batch: false }));
-      }
-    };
+      };
 
-    fetchBatchDetails();
+      fetchBatchDetails();
+    } else {
+      setError('Batch ID is missing');
+      setLoading(prev => ({ ...prev, batch: false }));
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
   }, [batch]);
 
   // 🔥 Pre-fill formData when batch data is available
@@ -175,54 +186,74 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
 
     // 2. Try to populate center dropdown
     let centerId = '';
+    // Check if center is an object with center_id, or just an ID string/UUID
     if (batchData.center) {
-      centerId = String(batchData.center);
+      if (typeof batchData.center === 'object' && batchData.center.center_id) {
+        centerId = String(batchData.center.center_id);
+      } else if (typeof batchData.center === 'string') {
+        centerId = String(batchData.center);
+      } else {
+        centerId = String(batchData.center);
+      }
       // Verify it exists in centers list if available
       if (centers.length > 0) {
         const exists = centers.some(c => String(c.center_id) === centerId);
         if (!exists) {
-          console.warn('⚠️ Center ID not found in centers list:', centerId);
+          console.warn('⚠️ Center ID not found in centers list:', centerId, 'Available centers:', centers.map(c => c.center_id));
         }
       }
       updateFormData({ center: centerId });
+      console.log('🏢 Center populated:', { centerId, centerData: batchData.center });
     } else if (batchData.center_name && centers.length > 0) {
       const selectedCenter = centers.find(c => c.center_name === batchData.center_name);
       if (selectedCenter) {
         centerId = String(selectedCenter.center_id);
         updateFormData({ center: centerId });
+        console.log('🏢 Center matched by name:', centerId);
       }
     }
 
     // 3. Try to populate teacher dropdown
     let teacherId = '';
-    if (batchData.teacher && teachers.length > 0) {
-      const batchTeacherId = String(batchData.teacher);
-      // Try to find by teacher_id first
-      let foundTeacher = teachers.find(t => String(t.teacher_id) === batchTeacherId);
-      
-      // If not found, try to find by user_id (teacher field)
-      if (!foundTeacher) {
-        foundTeacher = teachers.find(t => String(t.teacher) === batchTeacherId);
-        if (foundTeacher) {
-          console.log('✅ Found teacher by user_id, using teacher_id:', foundTeacher.teacher_id);
-        }
+    // Check if teacher is an object with teacher_id, or just an ID string/UUID
+    if (batchData.teacher) {
+      let batchTeacherId = '';
+      if (typeof batchData.teacher === 'object' && batchData.teacher.teacher_id) {
+        batchTeacherId = String(batchData.teacher.teacher_id);
+      } else if (typeof batchData.teacher === 'string') {
+        batchTeacherId = String(batchData.teacher);
+      } else {
+        batchTeacherId = String(batchData.teacher);
       }
       
-      if (foundTeacher) {
-        teacherId = String(foundTeacher.teacher_id);
-        updateFormData({ teacher: teacherId });
-        console.log('👨‍🏫 Teacher matched:', teacherId);
+      if (teachers.length > 0) {
+        // Try to find by teacher_id first
+        let foundTeacher = teachers.find(t => String(t.teacher_id) === batchTeacherId);
+        
+        // If not found, try to find by user_id (teacher field)
+        if (!foundTeacher) {
+          foundTeacher = teachers.find(t => String(t.teacher) === batchTeacherId);
+          if (foundTeacher) {
+            console.log('✅ Found teacher by user_id, using teacher_id:', foundTeacher.teacher_id);
+          }
+        }
+        
+        if (foundTeacher) {
+          teacherId = String(foundTeacher.teacher_id);
+          updateFormData({ teacher: teacherId });
+          console.log('👨‍🏫 Teacher matched:', { teacherId, teacherData: batchData.teacher });
+        } else {
+          // Use the ID directly if teachers list doesn't have it yet
+          teacherId = batchTeacherId;
+          updateFormData({ teacher: teacherId });
+          console.log('👨‍🏫 Using teacher ID directly (not found in list yet):', teacherId);
+        }
       } else {
-        // Use the ID directly if teachers list doesn't have it yet
+        // Teachers list not loaded yet, use ID directly
         teacherId = batchTeacherId;
         updateFormData({ teacher: teacherId });
-        console.log('👨‍🏫 Using teacher ID directly (not found in list yet):', teacherId);
+        console.log('👨‍🏫 Using teacher ID directly (teachers list not loaded):', teacherId);
       }
-    } else if (batchData.teacher) {
-      // Teachers list not loaded yet, use ID directly
-      teacherId = String(batchData.teacher);
-      updateFormData({ teacher: teacherId });
-      console.log('👨‍🏫 Using teacher ID directly (teachers list not loaded):', teacherId);
     } else if (batchData.teacher_name && teachers.length > 0) {
       const selectedTeacher = teachers.find(t => t.teacher_name === batchData.teacher_name);
       if (selectedTeacher) {
@@ -232,7 +263,61 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
       }
     }
 
-    // 4. Try to populate course dropdown
+    // 4. Try to populate assistant tutor dropdown
+    let assistantTutorId = '';
+    // Check if assistant_tutor is an object with teacher_id, or just an ID string/UUID, or null
+    if (batchData.assistant_tutor) {
+      let batchAssistantTutorId = '';
+      if (typeof batchData.assistant_tutor === 'object' && batchData.assistant_tutor.teacher_id) {
+        batchAssistantTutorId = String(batchData.assistant_tutor.teacher_id);
+      } else if (typeof batchData.assistant_tutor === 'string') {
+        batchAssistantTutorId = String(batchData.assistant_tutor);
+      } else {
+        batchAssistantTutorId = String(batchData.assistant_tutor);
+      }
+      
+      if (teachers.length > 0) {
+        // Try to find by teacher_id first
+        let foundAssistant = teachers.find(t => String(t.teacher_id) === batchAssistantTutorId);
+        
+        // If not found, try to find by user_id (teacher field)
+        if (!foundAssistant) {
+          foundAssistant = teachers.find(t => String(t.teacher) === batchAssistantTutorId);
+          if (foundAssistant) {
+            console.log('✅ Found assistant tutor by user_id, using teacher_id:', foundAssistant.teacher_id);
+          }
+        }
+        
+        if (foundAssistant) {
+          assistantTutorId = String(foundAssistant.teacher_id);
+          updateFormData({ assistant_tutor: assistantTutorId });
+          console.log('👨‍🏫 Assistant Tutor matched:', { assistantTutorId, assistantData: batchData.assistant_tutor });
+        } else {
+          // Use the ID directly if teachers list doesn't have it yet
+          assistantTutorId = batchAssistantTutorId;
+          updateFormData({ assistant_tutor: assistantTutorId });
+          console.log('👨‍🏫 Using assistant tutor ID directly (not found in list yet):', assistantTutorId);
+        }
+      } else {
+        // Teachers list not loaded yet, use ID directly
+        assistantTutorId = batchAssistantTutorId;
+        updateFormData({ assistant_tutor: assistantTutorId });
+        console.log('👨‍🏫 Using assistant tutor ID directly (teachers list not loaded):', assistantTutorId);
+      }
+    } else if (batchData.assistant_tutor_name && teachers.length > 0) {
+      const selectedAssistant = teachers.find(t => t.teacher_name === batchData.assistant_tutor_name);
+      if (selectedAssistant) {
+        assistantTutorId = String(selectedAssistant.teacher_id);
+        updateFormData({ assistant_tutor: assistantTutorId });
+        console.log('👨‍🏫 Assistant Tutor matched by name:', assistantTutorId);
+      }
+    } else {
+      // No assistant tutor
+      updateFormData({ assistant_tutor: '' });
+      console.log('👨‍🏫 No assistant tutor assigned');
+    }
+
+    // 5. Try to populate course dropdown
     let courseId = '';
     if (batchData.course_id) {
       courseId = String(batchData.course_id);
@@ -331,6 +416,7 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const updatedData = {
         batch_name: formData.batch_name,
@@ -343,188 +429,300 @@ const EditBatchModal = ({ batch, onClose, onUpdate }) => {
         max_students: parseInt(formData.max_students) // convert to integer
       };
 
+      // Add assistant_tutor if provided (optional)
+      if (formData.assistant_tutor) {
+        updatedData.assistant_tutor = formData.assistant_tutor;
+      } else {
+        // If assistant_tutor is empty, set to null to remove it
+        updatedData.assistant_tutor = null;
+      }
 
       await onUpdate(batch.batch_id, updatedData);
-      onClose();
+      handleClose();
     } catch (error) {
       console.error('Failed to update batch:', error);
+      setError(error.message || 'Failed to update batch');
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(() => {
+      onClose();
+    }, 300); // Wait for animation to complete
   };
 
   const isLoading = loading.centers || loading.teachers || loading.courses || loading.batch;
 
+  if (!batch) return null;
+
   if (error && !batchData) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg p-6 max-w-md">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-          >
-            Close
-          </button>
+      <div 
+        className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${
+          isVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+        onClick={handleClose}
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+      >
+        <div 
+          className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[32rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto ${
+            isVisible ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Error</h2>
+              <button onClick={handleClose} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-red-600 mb-4">{error}</p>
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold text-gray-800">Edit Batch</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+    <div 
+      className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${
+        isVisible ? 'opacity-100' : 'opacity-0'
+      }`}
+      onClick={handleClose}
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+    >
+      {/* Right Side Modal - BERRY Style with Smooth Slide Animation */}
+      <div 
+        className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[32rem] lg:w-[36rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto ${
+          isVisible ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header - BERRY Style */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">Edit Batch</h2>
+            </div>
+            <button
+              onClick={handleClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition duration-200"
+            >
+              <svg
+                className="w-5 h-5 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {isLoading ? (
-          <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mb-4"></div>
-            <p className="text-gray-600">Loading batch data...</p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="p-6">
-            {error && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-yellow-800 text-sm">{error}</p>
+        {/* Modal Body */}
+        <div className="p-6">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 min-h-[400px]">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mb-4"></div>
+              <p className="text-gray-600 font-medium">Loading batch data...</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-yellow-800 text-sm">{error}</p>
+                </div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch Name</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.batch_name}
+                    onChange={(e) => setFormData({ ...formData, batch_name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (months)</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.duration}
+                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                    min="1"
+                    max="24"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Seat Limit</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.max_students}
+                    onChange={(e) => setFormData({ ...formData, max_students: e.target.value })}
+                    min="1"
+                    max="100"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Maximum number of students allowed in this batch</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Center</label>
+                  <select
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.center}
+                    onChange={(e) => setFormData({ ...formData, center: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Center</option>
+                    {centers.map((center) => (
+                      <option key={center.center_id} value={String(center.center_id)}>
+                        {center.center_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
+                  <select
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.teacher}
+                    onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Teacher</option>
+                    {teachers.map((teacher) => (
+                      <option key={teacher.teacher_id} value={String(teacher.teacher_id)}>
+                        {teacher.teacher_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assistant Tutor <span className="text-gray-400 text-xs">(Optional)</span>
+                  </label>
+                  {loading.teachers ? (
+                    <div className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg">
+                      <div className="animate-pulse flex space-x-4">
+                        <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      value={formData.assistant_tutor}
+                      onChange={(e) => setFormData({ ...formData, assistant_tutor: e.target.value })}
+                    >
+                      <option value="">Select an assistant tutor (Optional)</option>
+                      {teachers.map((teacher) => (
+                        <option key={teacher.teacher_id} value={String(teacher.teacher_id)}>
+                          {teacher.teacher_name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Course</label>
+                  <select
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.course_id}
+                    onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Course</option>
+                    {courses.map((course) => (
+                      <option key={course.id} value={String(course.id)}>
+                        {course.course_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.time_from}
+                    onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <input
+                    type="time"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    value={formData.time_to}
+                    onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
-            )}
-            <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Batch Name</label>
-              <input
-                type="text"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.batch_name}
-                onChange={(e) => setFormData({ ...formData, batch_name: e.target.value })}
-                required
-              />
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Duration (months)</label>
-              <input
-                type="number"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.duration}
-                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                min="1"
-                max="24"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Seat Limit</label>
-              <input
-                type="number"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.max_students}
-                onChange={(e) => setFormData({ ...formData, max_students: e.target.value })}
-                min="1"
-                max="100"
-                required
-              />
-              <p className="mt-1 text-sm text-gray-500">Maximum number of students allowed in this batch</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Center</label>
-              <select
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.center}
-                onChange={(e) => setFormData({ ...formData, center: e.target.value })}
-                required
-              >
-                <option value="">Select Center</option>
-                {centers.map((center) => (
-                  <option key={center.center_id} value={String(center.center_id)}>
-                    {center.center_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Teacher</label>
-              <select
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.teacher}
-                onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
-                required
-              >
-                <option value="">Select Teacher</option>
-                {teachers.map((teacher) => (
-                  <option key={teacher.teacher_id} value={String(teacher.teacher_id)}>
-                    {teacher.teacher_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Course</label>
-              <select
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.course_id}
-                onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
-                required
-              >
-                <option value="">Select Course</option>
-                {courses.map((course) => (
-                  <option key={course.id} value={String(course.id)}>
-                    {course.course_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Start Time</label>
-              <input
-                type="time"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.time_from}
-                onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">End Time</label>
-              <input
-                type="time"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                value={formData.time_to}
-                onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Loading...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-        )}
+              {/* Footer */}
+              <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 mt-6">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  disabled={isSubmitting}
+                  className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isLoading}
+                  className="px-4 py-2.5 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
