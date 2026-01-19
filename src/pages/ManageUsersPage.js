@@ -21,7 +21,7 @@ import AssignAdminModal from "../components/AssignAdminModal";
 import AssignAcademicModal from "../components/AssignAcademicModal";
 import AssignManagerModal from "../components/AssignManagerModal";
 import AssignFinancialModal from "../components/AssignFinancialModal";
-import TutorInfoModal from "../components/TutorInfoModal";
+import TutorInfoSlidePanel from "../components/TutorInfoSlidePanel";
 import { ROLE_CONFIG } from "../config/roleConfig";
 
 const ManageUsersPage = () => {
@@ -1256,7 +1256,7 @@ const ManageUsersPage = () => {
       )}
 
       {showTutorInfoModal && (
-        <TutorInfoModal
+        <TutorInfoSlidePanel
           isOpen={showTutorInfoModal}
           onClose={() => {
             setShowTutorInfoModal(false);
