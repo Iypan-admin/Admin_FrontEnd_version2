@@ -18,8 +18,10 @@ import CenterAdminPage from "./pages/CenterAdminPage";
 import TeacherPage from "./pages/TeacherPage";
 import TeacherClassesPage from './pages/TeacherClassesPage';
 import TeacherEventCalendarPage from './pages/TeacherEventCalendarPage';
+import ManagerEventCalendarPage from './pages/ManagerEventCalendarPage';
 import BatchDetailPage from './pages/BatchDetailPage';
 import TakeClassPage from './pages/TakeClassPage';
+import TeacherAssessmentMarksPage from './pages/TeacherAssessmentMarksPage';
 import BatchChatsPage from './pages/BatchChatsPage';
 import BatchNotesPage from './pages/BatchNotesPage';
 import BatchCourseDetailsPage from './pages/BatchCourseDetailsPage';
@@ -38,6 +40,7 @@ import FinanceInvoiceApprovalPage from './pages/FinanceInvoiceApprovalPage';
 import FinalInvoiceApprovalPage from './pages/FinalInvoiceApprovalPage';
 import CardAdminPage from "./pages/CardAdminPage";
 import ResourceManagerPage from "./pages/ResourceManagerPage";
+import CertificateManagement from "./pages/CertificateManagement";
 import GenerateCardPage from "./pages/GenerateCardPage";
 import ActivateCardPage from "./pages/ActivateCardPage";
 import ApprovedCardPage from './pages/ApprovedCardPage';
@@ -65,6 +68,23 @@ import LiveClassPage from "./pages/LiveClassPage";
 import LSRWUploadPage from "./pages/LSRWUploadPage";
 import LSRWFileViewPage from "./pages/LSRWFileViewPage";
 import TeacherLSRWPage from "./pages/TeacherLSRWPage";
+import ManagerNotificationPage from "./pages/ManagerNotificationPage";
+import StateNotificationPage from "./pages/StateNotificationPage";
+import StateEventCalendarPage from "./pages/StateEventCalendarPage";
+
+
+
+
+ import AdminEventCalendarPage from "./pages/AdminEventCalendarPage";
+
+
+import AdminNotificationPage from "./pages/AdminNotificationPage";
+import FinanceNotificationPage from "./pages/FinanceNotificationPage";
+import FinanceEventCalendarPage from "./pages/FinanceEventCalendarPage";
+import CenterEventCalendarPage from "./pages/CenterEventCalendarPage";
+import ResourceEventCalendarPage from "./pages/ResourceEventCalendarPage";
+import CardAdminEventCalendarPage from "./pages/CardAdminEventCalendarPage";
+
 
 
 function App() {
@@ -152,6 +172,38 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="admin">
                   <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="admin">
+                  <AdminEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/notifications"
+              element={
+                <ProtectedRoute allowedRole="admin">
+                  <AdminNotificationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/account-settings"
+              element={
+                <ProtectedRoute allowedRole="admin">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/certificates"
+              element={
+                <ProtectedRoute allowedRole="admin">
+                  <CertificateManagement />
                 </ProtectedRoute>
               }
             />
@@ -248,6 +300,30 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="admin">
                   <ElitePassPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-batches"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <ManageBatchesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-batches/:batchId"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <BatchDetailViewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-students/:studentId"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <StudentDetailViewPage />
                 </ProtectedRoute>
               }
             />
@@ -359,6 +435,62 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/manager/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="manager">
+                  <ManagerEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manager/notifications"
+              element={
+                <ProtectedRoute allowedRole="manager">
+                  <ManagerNotificationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manager/account-settings"
+              element={
+                <ProtectedRoute allowedRole="manager">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/certificates"
+              element={
+                <ProtectedRoute allowedRole="manager">
+                  <CertificateManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-batches"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <ManageBatchesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-batches/:batchId"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <BatchDetailViewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-students/:studentId"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
+                  <StudentDetailViewPage />
+                </ProtectedRoute>
+              }
+            />
           </>
         )}
         {role === "financial" && (
@@ -372,6 +504,30 @@ function App() {
               }
             />
             <Route
+              path="/finance/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="financial">
+                  <FinanceEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/finance/notifications"
+              element={
+                <ProtectedRoute allowedRole="financial">
+                  <FinanceNotificationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/finance/account-settings"
+              element={
+                <ProtectedRoute allowedRole="financial">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/finance-admin/invoice-approval"
               element={
                 <ProtectedRoute allowedRole="financial">
@@ -379,6 +535,8 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+
             <Route
               path="/approve-students"
               element={
@@ -440,9 +598,17 @@ function App() {
               }
             />
             <Route
-              path="/manage-batches"
+              path="/certificates"
               element={
                 <ProtectedRoute allowedRole="academic">
+                  <CertificateManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-batches"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
                   <ManageBatchesPage />
                 </ProtectedRoute>
               }
@@ -450,7 +616,7 @@ function App() {
             <Route
               path="/manage-batches/:batchId"
               element={
-                <ProtectedRoute allowedRole="academic">
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
                   <BatchDetailViewPage />
                 </ProtectedRoute>
               }
@@ -466,7 +632,7 @@ function App() {
             <Route
               path="/manage-students/:studentId"
               element={
-                <ProtectedRoute allowedRole="academic">
+                <ProtectedRoute allowedRoles={["admin", "manager", "academic"]}>
                   <StudentDetailViewPage />
                 </ProtectedRoute>
               }
@@ -611,6 +777,41 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/state-admin/notifications"
+              element={
+                <ProtectedRoute allowedRole="state">
+                  <StateNotificationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/state-admin/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="state">
+                  <StateEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/state/account-settings"
+              element={
+                <ProtectedRoute allowedRole="state">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/student/:studentId"
+              element={
+                <ProtectedRoute allowedRole="state">
+                  <StudentDetailViewPage />
+                </ProtectedRoute>
+              }
+            />
+
+
           </>
         )}
         {role === "center" && (
@@ -679,6 +880,22 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/center-admin/account-settings"
+              element={
+                <ProtectedRoute allowedRole="center">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/center-admin/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="center">
+                  <CenterEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
           </>
         )}
         {role === "teacher" && (
@@ -740,6 +957,14 @@ function App() {
               }
             />
             <Route
+              path="/teacher/batch/:batchId/assessment-marks"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherAssessmentMarksPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/teacher/batch/:batchId/lsrw"
               element={
                 <ProtectedRoute allowedRole="teacher">
@@ -787,12 +1012,20 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/teacher/account-settings"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
           </>
         )}
         {role === "cardadmin" && (
           <>
             <Route
-              path="/cardadmin"
+              path="/card-admin"
               element={
                 <ProtectedRoute allowedRole="cardadmin">
                   <CardAdminPage />
@@ -831,6 +1064,22 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/card-admin/account-settings"
+              element={
+                <ProtectedRoute allowedRole="cardadmin">
+                  <AccountSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/card-admin/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="cardadmin">
+                  <CardAdminEventCalendarPage />
+                </ProtectedRoute>
+              }
+            />
           </>
         )}
         {role === "resource_manager" && (
@@ -840,6 +1089,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="resource_manager">
                   <ResourceManagerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/resource-manager/event-calendar"
+              element={
+                <ProtectedRoute allowedRole="resource_manager">
+                  <ResourceEventCalendarPage />
                 </ProtectedRoute>
               }
             />
@@ -888,6 +1145,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="resource_manager">
                   <LSRWFileViewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/resource-manager/account-settings"
+              element={
+                <ProtectedRoute allowedRole="resource_manager">
+                  <AccountSettingsPage />
                 </ProtectedRoute>
               }
             />

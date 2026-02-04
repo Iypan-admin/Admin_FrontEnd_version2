@@ -37,22 +37,13 @@ function BatchCourseDetailsPage() {
   // Get full name from token
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   // Get display name - ONLY show full name, never username
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
-    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '' && isFullName(tutorInfo.full_name)) {
-      return tutorInfo.full_name;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
+    }
+    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '') {
+      return tutorInfo.full_name;
     }
     return "Teacher";
   };

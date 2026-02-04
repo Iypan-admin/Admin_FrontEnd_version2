@@ -39,17 +39,8 @@ const AcademicCoordinatorPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   // Get display name - ONLY show full name, never username
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -260,11 +251,25 @@ const AcademicCoordinatorPage = () => {
                           <span className="text-sm text-gray-700">Account Settings</span>
                         </button>
 
+                        {/* Certificate Management */}
+                        <button
+                          onClick={() => {
+                            navigate('/certificates');
+                            setIsProfileDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-sm text-gray-700">Certificates</span>
+                        </button>
+
                         {/* Logout */}
                         <button
                           onClick={() => {
                             localStorage.removeItem("token");
-                            navigate("/login");
+                            navigate("/");
                             setIsProfileDropdownOpen(false);
                           }}
                           className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"

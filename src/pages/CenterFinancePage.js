@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Navbar from "../components/Navbar";
+import CenterHeader from "../components/CenterHeader";
 import { 
   getCenterByAdminId,
   getCyclePayments,
@@ -7,6 +8,8 @@ import {
   getCenterInvoices,
   getInvoiceItems
 } from "../services/Api";
+import InvoicePrintTemplate from "../components/InvoicePrintTemplate";
+import { X, Printer, FileText } from "lucide-react";
 
 const CenterFinancePage = () => {
   // Tab state
@@ -24,6 +27,9 @@ const CenterFinancePage = () => {
   const [expandedInvoices, setExpandedInvoices] = useState(new Set());
   const [invoiceItemsMap, setInvoiceItemsMap] = useState({});
   const [loadingItems, setLoadingItems] = useState(new Set());
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [invoiceToPrint, setInvoiceToPrint] = useState(null);
+  const [printItems, setPrintItems] = useState([]);
   
   // Common state
   const [loading, setLoading] = useState(true);
@@ -163,6 +169,29 @@ const CenterFinancePage = () => {
       fetchInvoiceItems(invoiceId);
     }
     setExpandedInvoices(newExpanded);
+  };
+
+  const handlePrintPreview = async (invoice) => {
+    setInvoiceToPrint(invoice);
+    setShowPrintPreview(true);
+    
+    // Fetch items specifically for printing if not already loaded
+    if (invoiceItemsMap[invoice.invoice_id]) {
+      setPrintItems(invoiceItemsMap[invoice.invoice_id]);
+    } else {
+      try {
+        const response = await getInvoiceItems(invoice.invoice_id);
+        if (response?.success && Array.isArray(response.data)) {
+          setPrintItems(response.data);
+          setInvoiceItemsMap(prev => ({
+            ...prev,
+            [invoice.invoice_id]: response.data
+          }));
+        }
+      } catch (err) {
+        console.error("Error fetching items for print:", err);
+      }
+    }
   };
 
   // Filter invoices
@@ -313,29 +342,17 @@ const CenterFinancePage = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       <Navbar showCenterViewOptions={false} selectedCenter={selectedCenter} />
-      <div className="flex-1 lg:ml-64 overflow-hidden">
-        <div className="h-screen overflow-y-auto">
-          <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
-            {/* Header Section */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-                <div className="flex items-center space-x-4">
-                  <div className="p-4 bg-white/20 backdrop-blur-sm rounded-2xl">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl font-bold mb-2">Invoice Management</h1>
-                    <p className="text-blue-100 text-lg">
-                      {selectedCenter?.center_name || 'Your center'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
+      <div className="flex-1 lg:ml-64 overflow-hidden flex flex-col">
+        <CenterHeader 
+          title="Invoice Management" 
+          subtitle={selectedCenter?.center_name || 'Manage your center invoices'} 
+          icon={FileText}
+        />
+        
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
 
             {/* Tabs */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
@@ -770,22 +787,16 @@ const CenterFinancePage = () => {
                                           </span>
                                         </td>
                                         <td className="px-4 py-4 text-sm">
-                                          {invoice.pdf_url ? (
-                                            <a
-                                              href={`${invoice.pdf_url}?t=${invoice.updated_at || invoice.created_at || Date.now()}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="inline-flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-xs font-medium"
-                                            >
-                                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                              </svg>
-                                              View PDF
-                                            </a>
-                                          ) : (
-                                            <span className="text-gray-400 text-xs">PDF not available</span>
-                                          )}
+                                          <button
+                                            onClick={() => handlePrintPreview(invoice)}
+                                            className="inline-flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-xs font-medium"
+                                          >
+                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            View & Print
+                                          </button>
                                         </td>
                                       </tr>
                                       
@@ -885,10 +896,56 @@ const CenterFinancePage = () => {
                   </div>
                 )}
 
+                </div>
               </div>
             </div>
           </div>
-        </div>
+
+        {/* Print Preview Modal */}
+        {showPrintPreview && (
+          <div className="fixed inset-0 z-[100] overflow-y-auto bg-black bg-opacity-75 backdrop-blur-sm flex items-start justify-center p-4 sm:p-8">
+            <div className="relative bg-gray-100 rounded-2xl shadow-2xl max-w-5xl w-full mx-auto overflow-hidden">
+              {/* Modal Header - Non-printable */}
+              <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 print:hidden">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Printer className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Invoice Print Preview</h3>
+                    <p className="text-sm text-gray-500">{invoiceToPrint?.invoice_number}</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print Invoice</span>
+                  </button>
+                  <button
+                    onClick={() => setShowPrintPreview(false)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Content - Printable */}
+              <div className="p-4 sm:p-12 bg-gray-50 flex justify-center overflow-x-auto">
+                <div className="bg-white shadow-xl">
+                  <InvoicePrintTemplate 
+                    invoice={invoiceToPrint} 
+                    items={printItems} 
+                    centerName={selectedCenter?.center_name} 
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

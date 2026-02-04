@@ -41,15 +41,7 @@ const EventCalendarPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }

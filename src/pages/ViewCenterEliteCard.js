@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
+import CenterHeader from "../components/CenterHeader";
 import { fetchEliteCards, addEliteCard, getStudentByRegisterNumber, getCardNameByNumber } from "../services/Api";
+import { Plus, CreditCard, Search } from "lucide-react";
 
 const ViewCenterEliteCard = () => {
     const [eliteCards, setEliteCards] = useState([]);
@@ -90,52 +92,35 @@ const ViewCenterEliteCard = () => {
                 <Navbar />
             </div>
             
-            {/* Scrollable Content Area */}
-            <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-                <div className="p-4 sm:p-6 lg:p-8">
-                    <div className="mt-16 lg:mt-0">
-                        <div className="max-w-7xl mx-auto space-y-6">
-                            {/* Enhanced Header Section */}
-                            <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white relative overflow-hidden">
-                                <div className="absolute inset-0 bg-black opacity-10"></div>
-                                <div className="relative z-10">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="p-3 bg-white bg-opacity-20 rounded-xl backdrop-blur-sm">
-                                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                                </svg>
-                                            </div>
-                                            <div>
-                                                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
-                                                    Elite Card Members
-                                                </h1>
-                                                <p className="text-blue-100 text-sm sm:text-base">
-                                                    Manage student elite cards and memberships
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                                            <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg px-4 py-2">
-                                                <p className="text-xs text-blue-100 mb-1">Total Cards</p>
-                                                <p className="text-2xl font-bold text-white">{eliteCards.length}</p>
-                                            </div>
-                                            <button
-                                                onClick={() => setShowModal(true)}
-                                                className="bg-white text-blue-600 px-6 py-3 rounded-xl font-semibold hover:bg-blue-50 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center gap-2"
-                                            >
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                                </svg>
-                                                Connect Elite Card
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                {/* Decorative elements */}
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -translate-y-16 translate-x-16"></div>
-                                <div className="absolute bottom-0 left-0 w-24 h-24 bg-white opacity-5 rounded-full translate-y-12 -translate-x-12"></div>
+        <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
+            <CenterHeader 
+                title="Elite Card Members" 
+                subtitle="Manage student elite cards and memberships" 
+                icon={CreditCard}
+            />
+            
+            <div className="p-4 sm:p-6 lg:p-8">
+                <div className="max-w-7xl mx-auto space-y-6">
+                    {/* Actions Row */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-3 flex items-center gap-3 w-full sm:w-auto">
+                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                                <Plus className="w-5 h-5 pointer-events-none" />
                             </div>
+                            <div>
+                                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Total Cards</p>
+                                <p className="text-xl font-bold text-gray-900">{eliteCards.length}</p>
+                            </div>
+                        </div>
+                        
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                        >
+                            <Plus className="w-5 h-5" />
+                            Connect Elite Card
+                        </button>
+                    </div>
 
                             {/* Enhanced Error Display */}
                             {error && (
@@ -231,151 +216,169 @@ const ViewCenterEliteCard = () => {
                                     </div>
                                 </div>
                             )}
-                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Enhanced Modal */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-                        {/* Modal Header */}
-                        <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 px-6 py-6 text-white">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-3">
-                                    <div className="p-2 bg-white bg-opacity-20 rounded-lg">
-                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                        </svg>
-                                    </div>
-                                    <h2 className="text-xl font-bold">Connect Elite Card</h2>
+            {/* Side Drawer - Berry Style (Matches CreateUserModal) */}
+            <div 
+                className={`fixed inset-0 z-50 overflow-y-auto transition-opacity duration-300 ${
+                    showModal ? 'opacity-100 visible' : 'opacity-0 invisible'
+                }`}
+            >
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+                    onClick={() => setShowModal(false)}
+                ></div>
+                
+                {/* Panel */}
+                <div 
+                    className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[28rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out flex flex-col ${
+                        showModal ? 'translate-x-0' : 'translate-x-full'
+                    }`}
+                >
+                    {/* Sticky Header - BERRY Style */}
+                    <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4 flex-shrink-0">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                                    <CreditCard className="w-6 h-6 text-white" />
                                 </div>
-                                <button
-                                    onClick={() => setShowModal(false)}
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
+                                <h2 className="text-xl font-bold text-gray-800">Connect Elite Card</h2>
                             </div>
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
                         </div>
-                        
-                        {/* Modal Body */}
-                        <div className="px-6 py-6">
-                        <form onSubmit={handleFormSubmit} className="space-y-5">
-
-                            {/* Student Name */}
+                    </div>
+                    
+                    {/* Drawer Body - BERRY Style */}
+                    <div className="p-6 flex-1 overflow-y-auto">
+                        <form id="elite-card-form" onSubmit={handleFormSubmit} className="space-y-6">
+                            {/* Registration Number Field */}
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Student Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    readOnly
-                                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-all"
-                                    value={formData.student_name}
-                                />
-                            </div>
-
-                            {/* Register Number */}
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Register Number</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-all"
-                                    value={formData.register_number}
-                                    onChange={async (e) => {
-                                        const regNo = e.target.value;
-
-                                        setFormData((prev) => ({
-                                            ...prev,
-                                            register_number: regNo,
-                                            student_name: "",
-                                        }));
-
-                                        if (regNo.length >= 3) {
-                                            try {
-                                                const name = await getStudentByRegisterNumber(regNo);
-                                                setFormData((prev) => ({
-                                                    ...prev,
-                                                    student_name: name || "",
-                                                }));
-                                            } catch (err) {
-                                                console.warn("Student not found:", regNo);
-                                                setFormData((prev) => ({ ...prev, student_name: "" }));
-                                            }
-                                        }
-                                    }}
-                                />
-                            </div>
-
-                            {/* Card Number */}
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Card Number</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono transition-all"
-                                    value={formData.card_number}
-                                    onChange={async (e) => {
-                                        const cardNumber = e.target.value;
-
-                                        setFormData((prev) => ({
-                                            ...prev,
-                                            card_number: cardNumber,
-                                            card_type: "",
-                                        }));
-
-                                        if (cardNumber.length >= 3) {
-                                            try {
-                                                const cardName = await getCardNameByNumber(cardNumber);
-                                                if (cardName) {
-                                                    setFormData((prev) => ({ ...prev, card_type: cardName }));
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Register Number</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Search className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Enter registration number"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                        value={formData.register_number}
+                                        onChange={async (e) => {
+                                            const regNo = e.target.value;
+                                            setFormData((prev) => ({ ...prev, register_number: regNo, student_name: "" }));
+                                            if (regNo.length >= 3) {
+                                                try {
+                                                    const name = await getStudentByRegisterNumber(regNo);
+                                                    setFormData((prev) => ({ ...prev, student_name: name || "" }));
+                                                } catch (err) {
+                                                    setFormData((prev) => ({ ...prev, student_name: "" }));
                                                 }
-                                            } catch (err) {
-                                                console.warn("Card not found:", cardNumber);
-                                                setFormData((prev) => ({ ...prev, card_type: "" }));
                                             }
-                                        }
-                                    }}
-                                />
+                                        }}
+                                    />
+                                </div>
                             </div>
 
-                            {/* Card Type (read-only) */}
+                            {/* Student Name Field (Read Only) */}
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Card Type</label>
-                                <input
-                                    type="text"
-                                    readOnly
-                                    required
-                                    className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm transition-all"
-                                    value={formData.card_type}
-                                />
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Student Name</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Plus className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-500 rounded-lg cursor-not-allowed"
+                                        value={formData.student_name}
+                                        placeholder="Auto-detected from Reg No"
+                                    />
+                                </div>
                             </div>
 
-                            {/* Buttons */}
-                            <div className="flex justify-end pt-4 gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="px-6 py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-                                >
-                                    Connect Card
-                                </button>
+                            {/* Card Number Field */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <CreditCard className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Enter card number"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 font-mono"
+                                        value={formData.card_number}
+                                        onChange={async (e) => {
+                                            const cardNumber = e.target.value;
+                                            setFormData((prev) => ({ ...prev, card_number: cardNumber, card_type: "" }));
+                                            if (cardNumber.length >= 3) {
+                                                try {
+                                                    const cardName = await getCardNameByNumber(cardNumber);
+                                                    if (cardName) setFormData((prev) => ({ ...prev, card_type: cardName }));
+                                                } catch (err) {
+                                                    setFormData((prev) => ({ ...prev, card_type: "" }));
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Card Type Field (Read Only) */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Card Type</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Search className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-500 rounded-lg cursor-not-allowed"
+                                        value={formData.card_type}
+                                        placeholder="Auto-detected from Card No"
+                                    />
+                                </div>
                             </div>
                         </form>
+                    </div>
+                    
+                    {/* Drawer Footer - BERRY Style */}
+                    <div className="p-6 border-t border-gray-200 flex-shrink-0">
+                        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowModal(false)}
+                                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition duration-200"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                form="elite-card-form"
+                                type="submit"
+                                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition duration-200 shadow-sm hover:shadow-md"
+                                style={{ backgroundColor: '#2196f3' }}
+                                onMouseEnter={(e) => { e.target.style.backgroundColor = '#1976d2'; }}
+                                onMouseLeave={(e) => { e.target.style.backgroundColor = '#2196f3'; }}
+                            >
+                                Connect Card
+                            </button>
                         </div>
                     </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 };

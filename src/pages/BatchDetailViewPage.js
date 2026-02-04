@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import AcademicNotificationBell from '../components/AcademicNotificationBell';
-import { getBatchById, getUserById, getEnrolledStudentsByBatch, getGMeetsByBatch, createGMeet, updateGMeet, deleteGMeet, getStudentPaymentDetails, getCurrentUserProfile } from '../services/Api';
-import { Video, Edit, Trash2, Save, Upload } from 'lucide-react';
+import ManagerNotificationBell from '../components/ManagerNotificationBell';
+import { getBatchById, getUserById, getEnrolledStudentsByBatch, getGMeetsByBatch, createGMeet, updateGMeet, deleteGMeet, getStudentPaymentDetails, getCurrentUserProfile, getBatchStudentsWithMarks, saveBatchMarks, submitBatchMarks, generateCertificate, approveGeneratedCertificate, deleteGeneratedCertificate } from '../services/Api';
+import { Trash2, Upload } from 'lucide-react';
 
 const BatchDetailViewPage = () => {
   const { batchId } = useParams();
@@ -11,15 +12,25 @@ const BatchDetailViewPage = () => {
   const [batch, setBatch] = useState(null);
   const [students, setStudents] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [assessmentData, setAssessmentData] = useState([]);
+  const [assessmentDate, setAssessmentDate] = useState(null);
+  const [courseLanguage, setCourseLanguage] = useState('Unknown');
+  const [languageColumns, setLanguageColumns] = useState([]);
+  const [loadingAssessment, setLoadingAssessment] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalData, setOriginalData] = useState([]);
+  const [generatedCertificates, setGeneratedCertificates] = useState({});
+  const [generatingCertificate, setGeneratingCertificate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [error, setError] = useState(null);
-  const [rightView, setRightView] = useState('student'); // 'student' or 'session'
-  const [editingSession, setEditingSession] = useState(null);
-  const [savingSession, setSavingSession] = useState(null);
-  const [showCancelModal, setShowCancelModal] = useState(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const [rightView, setRightView] = useState('student'); // 'student', 'session', or 'assessment'
+
   const [userRole, setUserRole] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [paymentDetails, setPaymentDetails] = useState(null);
@@ -45,17 +56,8 @@ const BatchDetailViewPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
-  // Get display name
+    // Get display name
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -353,145 +355,335 @@ const BatchDetailViewPage = () => {
     }
   };
 
-  // Fetch sessions when rightView changes to 'session'
+  const fetchAssessmentData = async (batchId) => {
+    try {
+      setLoadingAssessment(true);
+      const token = localStorage.getItem('token');
+      const data = await getBatchStudentsWithMarks(batchId, token);
+      
+      if (data.success) {
+        const studentList = data.data.students || [];
+        setAssessmentData(studentList);
+        setCourseLanguage(data.data.courseLanguage || 'Unknown');
+        setLanguageColumns(data.data.languageColumns || []);
+        setAssessmentDate(data.data.assessmentDate);
+
+        // Populate generated certificates state from student data
+        const certs = {};
+        studentList.forEach(student => {
+          if (student.certificate) {
+            certs[student.student_id] = student.certificate;
+          }
+        });
+        setGeneratedCertificates(certs);
+        
+        // Check if any marks are already submitted
+        const hasSubmittedMarks = data.data.students.some(student => 
+          student.status === 'submitted' || student.status === 'approved'
+        );
+        
+        // More robust check: only consider submitted if ALL students have submitted status
+        const allStudentsSubmitted = data.data.students.length > 0 && 
+          data.data.students.every(student => 
+            student.status === 'submitted' || student.status === 'approved'
+          );
+        
+        // Use allStudentsSubmitted instead of hasSubmittedMarks for better UX
+        const shouldDisableEdit = allStudentsSubmitted || batch?.status === 'completed';
+        setIsSubmitted(shouldDisableEdit);
+        
+        // Debug logging
+        console.log('Assessment data loaded:', {
+          hasSubmittedMarks,
+          allStudentsSubmitted,
+          batchStatus: batch?.status,
+          shouldDisableEdit,
+          isSubmitted: shouldDisableEdit,
+          studentsCount: data.data.students?.length
+        });
+        
+        // Log first student data to see all available fields
+        if (data.data.students && data.data.students.length > 0) {
+          console.log('First student data:', data.data.students[0]);
+          console.log('All student fields:', Object.keys(data.data.students[0]));
+        }
+      } else {
+        throw new Error(data.error || 'Failed to load assessment data');
+      }
+    } catch (error) {
+      console.error('Error fetching assessment data:', error);
+      setAssessmentData([]);
+      setCourseLanguage('Unknown');
+      setLanguageColumns([]);
+    } finally {
+      setLoadingAssessment(false);
+    }
+  };
+
+  // Handle mark changes
+  const handleMarkChange = (studentIndex, field, value) => {
+    const updatedAssessmentData = [...assessmentData];
+    updatedAssessmentData[studentIndex][field] = parseInt(value) || 0;
+    setAssessmentData(updatedAssessmentData);
+    setHasChanges(true);
+  };
+
+  // Start editing
+  const handleStartEdit = () => {
+    // Prevent editing if marks are already submitted or batch is completed
+    if (isSubmitted || batch?.status === 'completed') {
+      console.log('Edit blocked:', {
+        isSubmitted,
+        batchStatus: batch?.status,
+        reason: isSubmitted ? 'All students marks already submitted' : 'Batch completed'
+      });
+      return;
+    }
+    
+    console.log('Starting edit mode');
+    setOriginalData(JSON.parse(JSON.stringify(assessmentData)));
+    setIsEditing(true);
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setAssessmentData(originalData);
+    setIsEditing(false);
+    setHasChanges(false);
+  };
+
+  // Reset submitted state for testing
+  const resetSubmittedState = () => {
+    console.log('Resetting submitted state to false');
+    setIsSubmitted(false);
+  };
+
+  // Generate certificate for a student
+  const handleGenerateCertificate = async (studentIndex) => {
+    const student = assessmentData[studentIndex];
+    const studentId = student.student_id;
+    
+    setGeneratingCertificate(true);
+    
+    try {
+      const token = localStorage.getItem('token');
+      const result = await generateCertificate(studentId, batchId, token);
+      
+      if (result.success) {
+        // Open certificate in new tab
+        window.open(result.data.certificateUrl, '_blank');
+        
+        // Update state
+        setGeneratedCertificates(prev => ({
+          ...prev,
+          [studentId]: {
+            url: result.data.certificateUrl,
+            generatedAt: new Date(),
+            certificateId: result.data.certificateId
+          }
+        }));
+        
+        alert('Certificate generated successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to generate certificate');
+      }
+    } catch (error) {
+      console.error('Error generating certificate:', error);
+      alert(error.message || 'Failed to generate certificate');
+    } finally {
+      setGeneratingCertificate(false);
+    }
+  };
+
+  // View certificate
+  const viewCertificate = (studentId) => {
+    const certificate = generatedCertificates[studentId];
+    if (certificate && certificate.url) {
+      window.open(certificate.url, '_blank');
+    }
+  };
+
+  // Approve certificate
+  const handleApproveCertificate = async (certificateId, studentId) => {
+    if (!window.confirm('Are you sure you want to approve this certificate?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const result = await approveGeneratedCertificate(certificateId, token);
+      
+      if (result.success) {
+        alert('Certificate approved successfully');
+        // Update local state to show as completed
+        setGeneratedCertificates(prev => ({
+          ...prev,
+          [studentId]: {
+            ...prev[studentId],
+            status: 'completed'
+          }
+        }));
+        // Optional: Refresh assessment data
+        await fetchAssessmentData(batchId);
+      }
+    } catch (error) {
+      console.error('Error approving certificate:', error);
+      alert(error.message || 'Failed to approve certificate');
+    }
+  };
+
+  // Delete generated certificate
+  const handleDeleteGeneratedCertificate = async (certificateId, studentId) => {
+    if (!window.confirm('Are you sure you want to delete this generated certificate? This will allow you to generate a new one.')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const result = await deleteGeneratedCertificate(certificateId, token);
+      
+      if (result.success) {
+        alert('Certificate deleted successfully');
+        // Remove from local state
+        setGeneratedCertificates(prev => {
+          const newState = { ...prev };
+          delete newState[studentId];
+          return newState;
+        });
+        // Optional: Refresh assessment data
+        await fetchAssessmentData(batchId);
+      }
+    } catch (error) {
+      console.error('Error deleting certificate:', error);
+      alert(error.message || 'Failed to delete certificate');
+    }
+  };
+
+  // Save marks
+  const handleSaveMarks = async () => {
+    setSaving(true);
+    
+    try {
+      const token = localStorage.getItem('token');
+      const marksData = assessmentData.map(student => {
+        const marks = {
+          studentId: student.student_id,
+          marksData: {
+            status: student.status || 'draft'
+          }
+        };
+
+        // Add language-specific marks to marksData
+        const lang = courseLanguage?.toLowerCase().trim();
+        if (lang === 'german') {
+          marks.marksData.german_lesen_marks = student.german_lesen_marks || 0;
+          marks.marksData.german_schreiben_marks = student.german_schreiben_marks || 0;
+          marks.marksData.german_horen_marks = student.german_horen_marks || 0;
+          marks.marksData.german_sprechen_marks = student.german_sprechen_marks || 0;
+        } else if (lang === 'french') {
+          marks.marksData.french_comprehension_orale_marks = student.french_comprehension_orale_marks || 0;
+          marks.marksData.french_comprehension_ecrite_marks = student.french_comprehension_ecrite_marks || 0;
+          marks.marksData.french_production_orale_marks = student.french_production_orale_marks || 0;
+          marks.marksData.french_production_ecrite_marks = student.french_production_ecrite_marks || 0;
+        } else if (lang === 'japanese') {
+          marks.marksData.japanese_vocabulary_grammar_marks = student.japanese_vocabulary_grammar_marks || 0;
+          marks.marksData.japanese_reading_marks = student.japanese_reading_marks || 0;
+          marks.marksData.japanese_listening_marks = student.japanese_listening_marks || 0;
+        }
+
+        return marks;
+      });
+
+      const result = await saveBatchMarks(batchId, marksData, assessmentDate, token);
+      
+      if (result.success) {
+        alert('Marks saved successfully');
+        setHasChanges(false);
+        setIsEditing(false);
+        // Update assessmentData with returned data
+        setAssessmentData(result.data);
+      } else {
+        throw new Error(result.error || 'Failed to save marks');
+      }
+    } catch (error) {
+      console.error('Error saving marks:', error);
+      alert('Failed to save marks');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Submit final marks
+  const handleSubmitMarks = async () => {
+    if (!window.confirm('Are you sure you want to submit the final marks? This will complete the batch assessment.')) {
+      return;
+    }
+
+    setSubmitting(true);
+    
+    try {
+      // First save any pending changes
+      if (hasChanges) {
+        await handleSaveMarks();
+      }
+
+      const token = localStorage.getItem('token');
+      const result = await submitBatchMarks(batchId, token);
+      
+      if (result.success) {
+        alert('Assessment marks submitted successfully');
+        setIsSubmitted(true); // Disable further editing and submission
+        setHasChanges(false);
+        setIsEditing(false); // Exit edit mode
+        // Remove automatic navigation to prevent logout
+        // navigate('/teacher/classes');
+        
+        // Refresh the data to show updated status
+        await fetchAssessmentData(batchId);
+      } else {
+        throw new Error(result.error || 'Failed to submit marks');
+      }
+    } catch (error) {
+      console.error('Error submitting marks:', error);
+      alert('Failed to submit marks');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Get total marks for a student
+  const getTotalMarks = (student) => {
+    const lang = courseLanguage?.toLowerCase().trim();
+    if (lang === 'german') return student.german_total_marks || 0;
+    if (lang === 'french') return student.french_total_marks || 0;
+    if (lang === 'japanese') return student.japanese_total_marks || 0;
+    return 0;
+  };
+
+  // Get max total marks for the language
+  const getMaxTotalMarks = () => {
+    const lang = courseLanguage?.toLowerCase().trim();
+    if (lang === 'german') return 100;
+    if (lang === 'french') return 100;
+    if (lang === 'japanese') return 180;
+    return 0;
+  };
+
+  // Fetch data when rightView changes
   useEffect(() => {
-    if (batchId && rightView === 'session' && batch) {
-      fetchSessions(batchId);
+    if (batchId && batch) {
+      if (rightView === 'session') {
+        fetchSessions(batchId);
+      } else if (rightView === 'assessment') {
+        fetchAssessmentData(batchId);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, rightView, batch]);
 
-  // Session management functions
-  const handleSessionEdit = (sessionNumber) => {
-    setEditingSession(sessionNumber);
-  };
 
-  const handleSessionSave = async (sessionNumber) => {
-    try {
-      setSavingSession(sessionNumber);
-      const token = localStorage.getItem('token');
-      const session = sessions.find(s => s.session_number === sessionNumber);
-      
-      if (!session || !session.meet_id) {
-        // Create new session
-        const newSession = {
-          batch_id: batchId,
-          session_number: sessionNumber,
-          title: session.title || `Session ${sessionNumber}`,
-          date: session.date || null,
-          time: session.time || null,
-          meet_link: session.meet_link || null,
-          note: session.note || null,
-          status: session.status || 'Scheduled',
-          cancellation_reason: session.cancellation_reason || null,
-          current: false
-        };
-        await createGMeet(newSession, token);
-      } else {
-        // Update existing session
-        const updates = {
-          title: session.title || `Session ${sessionNumber}`,
-          date: session.date || null,
-          time: session.time || null,
-          meet_link: session.meet_link || null,
-          note: session.note || null,
-          status: session.status || 'Scheduled',
-          cancellation_reason: session.cancellation_reason || null
-        };
-        await updateGMeet(session.meet_id, updates, token);
-      }
-      
-      setEditingSession(null);
-      fetchSessions(batchId);
-    } catch (error) {
-      console.error('Error saving session:', error);
-      alert('Failed to save session: ' + error.message);
-    } finally {
-      setSavingSession(null);
-    }
-  };
 
-  const handleSessionCancel = () => {
-    setEditingSession(null);
-    fetchSessions(batchId); // Reload to reset changes
-  };
 
-  const handleSessionChange = (sessionNumber, field, value) => {
-    setSessions(prev => prev.map(s => 
-      s.session_number === sessionNumber 
-        ? { ...s, [field]: value }
-        : s
-    ));
-  };
 
-  const handleStatusChange = async (sessionNumber, newStatus) => {
-    if (newStatus === 'Cancelled') {
-      setShowCancelModal(sessionNumber);
-      setCancelReason('');
-      return;
-    }
-    
-    await updateSessionStatus(sessionNumber, newStatus, null);
-  };
 
-  const handleConfirmCancel = async () => {
-    if (!cancelReason.trim()) {
-      alert('Please provide a cancellation reason');
-      return;
-    }
-    
-    await updateSessionStatus(showCancelModal, 'Cancelled', cancelReason);
-    setShowCancelModal(null);
-    setCancelReason('');
-  };
 
-  const updateSessionStatus = async (sessionNumber, status, cancellationReason) => {
-    try {
-      const token = localStorage.getItem('token');
-      const session = sessions.find(s => s.session_number === sessionNumber);
-      
-      if (!session || !session.meet_id) {
-        // If no meet_id, create session first
-        const newSession = {
-          batch_id: batchId,
-          session_number: sessionNumber,
-          title: session.title || `Session ${sessionNumber}`,
-          date: session.date || null,
-          time: session.time || null,
-          meet_link: session.meet_link || null,
-          note: session.note || null,
-          status: status,
-          cancellation_reason: cancellationReason || null,
-          current: false
-        };
-        const result = await createGMeet(newSession, token);
-        if (result && result.data && result.data[0]) {
-          setSessions(prev => prev.map(s => 
-            s.session_number === sessionNumber 
-              ? { ...s, meet_id: result.data[0].meet_id, status, cancellation_reason: cancellationReason }
-              : s
-          ));
-        }
-      } else {
-        // Update existing session
-        const updates = {
-          status: status,
-          cancellation_reason: cancellationReason || null
-        };
-        await updateGMeet(session.meet_id, updates, token);
-        setSessions(prev => prev.map(s => 
-          s.session_number === sessionNumber 
-            ? { ...s, status, cancellation_reason: cancellationReason }
-            : s
-        ));
-      }
-      
-      fetchSessions(batchId);
-    } catch (error) {
-      console.error('Error updating session status:', error);
-      alert('Failed to update session status: ' + error.message);
-    }
-  };
+
 
   const handleDeleteSession = async (meetId) => {
     if (!meetId) return;
@@ -848,9 +1040,14 @@ const BatchDetailViewPage = () => {
                   </svg>
                 </button>
                 <button
-                  onClick={() => navigate('/manage-batches')}
+                  onClick={() => {
+                    const backPath = userRole === 'manager' || userRole === 'admin' 
+                      ? '/batch-approval' 
+                      : '/manage-batches';
+                    navigate(backPath);
+                  }}
                   className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
-                  title="Back to Manage Batches"
+                  title={userRole === 'manager' || userRole === 'admin' ? "Back to Batch Approvals" : "Back to Manage Batches"}
                 >
                   <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -868,8 +1065,9 @@ const BatchDetailViewPage = () => {
 
               {/* Right: Notifications, Profile */}
               <div className="flex items-center space-x-2 sm:space-x-4">
-                {/* Notifications - Only for Academic role */}
+                {/* Notifications */}
                 {userRole === 'academic' && <AcademicNotificationBell />}
+                {(userRole === 'manager' || userRole === 'admin') && <ManagerNotificationBell />}
 
                 {/* Profile Dropdown */}
                 <div className="relative">
@@ -907,11 +1105,17 @@ const BatchDetailViewPage = () => {
                         
                         {/* Menu Items */}
                         <div className="py-2">
-                          {/* Account Settings - Only for Academic role */}
-                          {userRole === 'academic' && (
+                          {/* Account Settings */}
+                          {(userRole === 'academic' || userRole === 'manager' || userRole === 'admin') && (
                             <button
                               onClick={() => {
-                                navigate('/academic-coordinator/settings');
+                                const settingsPaths = {
+                                  'academic': '/academic-coordinator/settings',
+                                  'manager': '/manager/account-settings',
+                                  'admin': '/manager/account-settings'
+                                };
+                                const path = settingsPaths[userRole] || '/account-settings';
+                                navigate(path);
                                 setIsProfileDropdownOpen(false);
                               }}
                               className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
@@ -1260,57 +1464,68 @@ const BatchDetailViewPage = () => {
                   >
                     Sessions
                   </button>
+                  {(userRole === 'academic' || userRole === 'teacher' || userRole === 'student' || userRole === 'manager' || userRole === 'admin') && (
+                    <button
+                      onClick={() => setRightView('assessment')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                        rightView === 'assessment'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Certificates
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Content based on view */}
               {rightView === 'student' ? (
                 /* Students List Section */
                 <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-semibold text-gray-800">Students List</h4>
-                  <span className="text-sm text-gray-500">
-                    {students.length} / {batch.max_students || 'N/A'}
-                  </span>
-                </div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold text-gray-800">Students List</h4>
+                    <span className="text-sm text-gray-500">
+                      {students.length} / {batch.max_students || 'N/A'}
+                    </span>
+                  </div>
 
-                {loadingStudents ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
-                  </div>
-                ) : students.length === 0 ? (
-                  <div className="text-center py-8">
-                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                    <p className="text-sm text-gray-500">No students enrolled</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {students.map((student, index) => (
-                      <div 
-                        key={student.student_id || index} 
-                        onClick={() => handleStudentClick(student)}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                          {student.name?.charAt(0).toUpperCase() || student.registration_number?.charAt(0) || 'S'}
+                  {loadingStudents ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
+                    </div>
+                  ) : students.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {students.map((student, index) => (
+                        <div 
+                          key={student.student_id || index} 
+                          onClick={() => handleStudentClick(student)}
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                            {student.name?.charAt(0).toUpperCase() || student.registration_number?.charAt(0) || 'S'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate hover:text-blue-600">
+                              {student.name || 'N/A'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {student.registration_number || student.email || 'N/A'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate hover:text-blue-600">
-                            {student.name || 'N/A'}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {student.registration_number || student.email || 'N/A'}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              ) : (
-                /* Sessions Table Section - Similar to BatchSessionPage */
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      <p className="text-sm text-gray-500">No students enrolled</p>
+                    </div>
+                  )}
+                </div>
+              ) : rightView === 'session' ? (
+                /* Sessions Table Section */
                 <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
                     <div>
@@ -1345,7 +1560,7 @@ const BatchDetailViewPage = () => {
                       <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
                       <p className="mt-4 text-gray-600 font-medium">Loading sessions...</p>
                     </div>
-                  ) : (
+                  ) : sessions.length > 0 ? (
                     <div className="overflow-x-auto max-h-96 overflow-y-auto">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50 sticky top-0">
@@ -1354,226 +1569,437 @@ const BatchDetailViewPage = () => {
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Google Meet Link</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Meet Link</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {sessions.length === 0 ? (
-                            <tr>
-                              <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
-                                No sessions found. {batch.total_sessions ? `Expected ${batch.total_sessions} sessions.` : 'No sessions created yet.'}
+                          {sessions.map((session, index) => (
+                            <tr key={session.session_number || session.meet_id} className="hover:bg-gray-50">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {session.session_number}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {session.date ? formatDate(session.date) : '-'}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {session.time ? formatTime(session.time) : '-'}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-gray-500">
+                                {session.title || '-'}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-gray-500">
+                                {session.meet_link ? (
+                                  <a 
+                                    href={session.meet_link} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-blue-600 hover:text-blue-800 underline"
+                                  >
+                                    Join Meet
+                                  </a>
+                                ) : '-'}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  session.status === 'Scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                                  session.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                  session.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {session.status || 'Scheduled'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                <div className="flex space-x-2">
+
+                                  {session.meet_id && (
+                                    <button
+                                      onClick={() => handleDeleteSession(session.meet_id)}
+                                      className="text-red-600 hover:text-red-900 flex items-center"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
-                          ) : (
-                            sessions.map((session) => {
-                              const isEditing = editingSession === session.session_number;
-                              const isSaving = savingSession === session.session_number;
-                              const sessionStatus = session.status || 'Scheduled';
-                              const isCancelled = sessionStatus === 'Cancelled';
-                              const isCompleted = sessionStatus === 'Completed';
-                              
-                              return (
-                                <tr key={session.session_number || session.meet_id} className="hover:bg-gray-50">
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {session.session_number}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <input
-                                        type="date"
-                                        value={session.date || ''}
-                                        onChange={(e) => handleSessionChange(session.session_number, 'date', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                      />
-                                    ) : (
-                                      session.date ? formatDate(session.date) : '-'
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <input
-                                        type="time"
-                                        value={session.time || ''}
-                                        onChange={(e) => handleSessionChange(session.session_number, 'time', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                      />
-                                    ) : (
-                                      session.time ? formatTime(session.time) : '-'
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <input
-                                        type="text"
-                                        value={session.title || ''}
-                                        onChange={(e) => handleSessionChange(session.session_number, 'title', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                      />
-                                    ) : (
-                                      session.title || '-'
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <input
-                                        type="url"
-                                        value={session.meet_link || ''}
-                                        onChange={(e) => handleSessionChange(session.session_number, 'meet_link', e.target.value)}
-                                        placeholder="https://meet.google.com/xxx-xxxx-xxx"
-                                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                      />
-                                    ) : session.meet_link ? (
-                                      <a href={session.meet_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center">
-                                        <Video className="w-4 h-4 mr-1" /> Join
-                                      </a>
-                                    ) : (
-                                      '-'
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <textarea
-                                        value={session.note || ''}
-                                        onChange={(e) => handleSessionChange(session.session_number, 'note', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                        rows="2"
-                                      />
-                                    ) : (
-                                      session.note || '-'
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                    {isEditing ? (
-                                      <select
-                                        value={sessionStatus}
-                                        onChange={(e) => handleStatusChange(session.session_number, e.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-sm"
-                                      >
-                                        <option value="Scheduled">Scheduled</option>
-                                        <option value="Completed">Completed</option>
-                                        <option value="Cancelled">Cancelled</option>
-                                      </select>
-                                    ) : (
-                                      <div className="flex flex-col">
-                                        <span
-                                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                            isCompleted
-                                              ? 'bg-green-100 text-green-800'
-                                              : isCancelled
-                                              ? 'bg-red-100 text-red-800'
-                                              : 'bg-blue-100 text-blue-800'
-                                          }`}
-                                        >
-                                          {sessionStatus}
-                                        </span>
-                                        {isCancelled && session.cancellation_reason && (
-                                          <span
-                                            className="mt-1 text-xs text-gray-600 truncate max-w-xs"
-                                            title={session.cancellation_reason}
-                                          >
-                                            {session.cancellation_reason}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {isEditing ? (
-                                      <div className="flex space-x-2">
-                                        <button
-                                          onClick={() => handleSessionSave(session.session_number)}
-                                          disabled={isSaving}
-                                          className="text-green-600 hover:text-green-900 disabled:opacity-50 flex items-center"
-                                          title="Save"
-                                        >
-                                          {isSaving ? (
-                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
-                                          ) : (
-                                            <Save className="w-4 h-4" />
-                                          )}
-                                        </button>
-                                        <button
-                                          onClick={handleSessionCancel}
-                                          className="text-gray-600 hover:text-gray-900 flex items-center text-xs"
-                                          title="Cancel"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex space-x-2">
-                                        <button
-                                          onClick={() => handleSessionEdit(session.session_number)}
-                                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                                          title="Edit"
-                                        >
-                                          <Edit className="w-4 h-4" />
-                                        </button>
-                                        {session.meet_id && (
-                                          <button
-                                            onClick={() => handleDeleteSession(session.meet_id)}
-                                            className="text-red-600 hover:text-red-900 flex items-center"
-                                            title="Delete"
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
+                          ))}
                         </tbody>
                       </table>
                     </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      <h3 className="text-sm font-medium text-gray-900 mb-1">No Sessions Found</h3>
+                      <p className="text-xs text-gray-500">No sessions have been scheduled for this batch yet.</p>
+                    </div>
                   )}
                 </div>
-              )}
+              ) : rightView === 'assessment' ? (
+                /* Assessment Marks Entry Section */
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h4 className="text-lg font-semibold text-gray-800">Assessment Marks Entry</h4>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {assessmentDate && (
+                        <span className="px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium bg-green-100 text-green-800">
+                          📅 {new Date(assessmentDate).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium ${
+                        courseLanguage === 'German' ? 'bg-purple-100 text-purple-800' :
+                        courseLanguage === 'French' ? 'bg-blue-100 text-blue-800' :
+                        courseLanguage === 'Japanese' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {courseLanguage}
+                      </span>
+                      {loadingAssessment && (
+                        <span className="text-[10px] text-gray-500 animate-pulse">Loading...</span>
+                      )}
+                      {/* Temporary reset button for testing */}
+                      <button
+                        onClick={resetSubmittedState}
+                        className="px-2 py-1 text-[10px] bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                        title="Reset submitted state (testing only)"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  
+                  {loadingAssessment ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="w-8 h-8 border-4 rounded-full animate-spin" style={{ borderColor: '#e3f2fd', borderTopColor: '#2196f3' }}></div>
+                    </div>
+                  ) : assessmentData.length > 0 ? (
+                    <>
+                      {/* Disclaimer for Completed Batches */}
+                      {batch?.status === 'completed' && (
+                        <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <div className="flex items-center">
+                            <svg className="w-4 h-4 text-yellow-600 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01" />
+                            </svg>
+                            <p className="text-xs text-yellow-700">
+                              <strong>Notice:</strong> Batch completed - Assessment data entry is not available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Assessment Table */}
+                      <div className={`bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden ${batch?.status === 'completed' ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Student Name
+                                </th>
+                                {languageColumns.map((column) => (
+                                  <th key={column.key} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {column.label}
+                                    <br />
+                                    <span className="text-xs text-gray-400">(Max: {column.maxMarks})</span>
+                                  </th>
+                                ))}
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Total
+                                  <br />
+                                  <span className="text-xs text-gray-400">(Max: {getMaxTotalMarks()})</span>
+                                </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Certificate
+                                </th>
+                                {(userRole?.toLowerCase() === 'academic' || userRole?.toLowerCase() === 'academic_coordinator' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'manager') && (
+                                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Action
+                                  </th>
+                                )}
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {assessmentData.map((student, index) => {
+                                const uniqueKey = student.student_id ? `student-${student.student_id}` : `student-index-${index}`;
+                                return (
+                                  <tr key={uniqueKey} className="hover:bg-gray-50">
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {student.first_name} {student.last_name}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {student.registration_number || student.reg_number || student.reg_no || student.roll_number || student.roll_no || 'N/A'}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    {languageColumns.map((column) => (
+                                      <td key={`${uniqueKey}-${column.key}`} className="px-4 py-4 whitespace-nowrap">
+                                        {isEditing ? (
+                                          <input
+                                            key={`${uniqueKey}-${column.key}-input`}
+                                            type="number"
+                                            min="0"
+                                            max={column.maxMarks}
+                                            value={student[column.key] || 0}
+                                            onChange={(e) => handleMarkChange(index, column.key, e.target.value)}
+                                            disabled={isSubmitted || batch?.status === 'completed'}
+                                            className={`w-20 px-2 py-1 text-center border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                              isSubmitted || batch?.status === 'completed'
+                                                ? 'bg-gray-100 text-gray-500 border-gray-300 cursor-not-allowed' 
+                                                : 'border-gray-300'
+                                            }`}
+                                          />
+                                        ) : (
+                                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                            student[column.key] >= (column.maxMarks * 0.8)
+                                              ? 'bg-green-100 text-green-800'
+                                              : student[column.key] >= (column.maxMarks * 0.6)
+                                              ? 'bg-yellow-100 text-yellow-800'
+                                              : 'bg-red-100 text-red-800'
+                                          }`}>
+                                            {student[column.key] || 0}
+                                          </span>
+                                        )}
+                                      </td>
+                                    ))}
+                                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                                      <div className="font-semibold text-gray-900">
+                                        {getTotalMarks(student)}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        / {getMaxTotalMarks()}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                                      {generatedCertificates[student.student_id] ? (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <button
+                                            onClick={() => viewCertificate(student.student_id)}
+                                            className="text-green-600 hover:text-green-800 text-sm font-medium flex items-center justify-center underline"
+                                            title="View Certificate"
+                                          >
+                                            View Certificate
+                                          </button>
+                                          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                                            generatedCertificates[student.student_id].status === 'completed'
+                                              ? 'bg-green-100 text-green-700'
+                                              : 'bg-yellow-100 text-yellow-700'
+                                          }`}>
+                                            {generatedCertificates[student.student_id].status || 'pending'}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleGenerateCertificate(index)}
+                                          disabled={generatingCertificate || getTotalMarks(student) === 0}
+                                          className={`text-sm font-medium flex items-center justify-center px-3 py-1 rounded ${
+                                            generatingCertificate
+                                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                              : getTotalMarks(student) === 0
+                                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                                          }`}
+                                          title={getTotalMarks(student) === 0 ? 'No marks available for certificate' : 'Generate Certificate'}
+                                        >
+                                          {generatingCertificate ? (
+                                            <>
+                                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                              Generating...
+                                            </>
+                                          ) : (
+                                            'Generate'
+                                          )}
+                                        </button>
+                                      )}
+                                    </td>
+                                    {(userRole?.toLowerCase() === 'academic' || userRole?.toLowerCase() === 'academic_coordinator' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'manager') && (
+                                      <td className="px-4 py-4 whitespace-nowrap text-center">
+                                        {generatedCertificates[student.student_id] && (
+                                          <div className="flex items-center justify-center gap-2">
+                                            {generatedCertificates[student.student_id].status !== 'completed' && (
+                                              <button
+                                                onClick={() => handleApproveCertificate(generatedCertificates[student.student_id].certificateId || generatedCertificates[student.student_id].certificate_id, student.student_id)}
+                                                className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600 font-medium"
+                                              >
+                                                Approve
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={() => handleDeleteGeneratedCertificate(generatedCertificates[student.student_id].certificateId || generatedCertificates[student.student_id].certificate_id, student.student_id)}
+                                              className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 font-medium"
+                                            >
+                                              Delete
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-8">
+                        <div className="flex flex-wrap gap-3">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={handleSaveMarks}
+                                disabled={saving || !hasChanges || isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  saving || !hasChanges || isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {saving ? (
+                                  <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Saving...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Save Changes
+                                  </>
+                                )}
+                              </button>
+                              
+                              <button
+                                onClick={handleCancelEdit}
+                                disabled={saving}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  saving
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-gray-600 text-white hover:bg-gray-700'
+                                }`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={handleStartEdit}
+                                disabled={isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                                title={isSubmitted ? 'Marks already submitted - editing not allowed' : batch?.status === 'completed' ? 'Batch completed - editing not allowed' : 'Edit assessment marks'}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit Marks
+                              </button>
+                              
+                              <button
+                                onClick={handleSubmitMarks}
+                                disabled={submitting || isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  submitting || isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {submitting ? (
+                                  <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Submitting...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {isSubmitted || batch?.status === 'completed' ? 'Already Submitted' : 'Submit Final Marks'}
+                                  </>
+                                )}
+                              </button>
+                              
+                              <button
+                                onClick={async () => {
+                                  // Generate certificates for ALL students in the batch
+                                  const confirmGenerate = window.confirm(
+                                    `Are you sure you want to generate certificates for all ${assessmentData.length} students in this batch?`
+                                  );
+                                  if (!confirmGenerate) return;
+                                  
+                                  for (let index = 0; index < assessmentData.length; index++) {
+                                    try {
+                                      await handleGenerateCertificate(index);
+                                      // Small delay between generations to avoid overwhelming the server
+                                      await new Promise(resolve => setTimeout(resolve, 500));
+                                    } catch (error) {
+                                      console.error(`Failed to generate certificate for student at index ${index}:`, error);
+                                      // Continue with next student even if one fails
+                                    }
+                                  }
+                                  
+                                  alert(`Certificate generation completed for ${assessmentData.length} students!`);
+                                }}
+                                disabled={generatingCertificate || assessmentData.length === 0}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  generatingCertificate || assessmentData.length === 0
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                                }`}
+                                title={assessmentData.length === 0 ? 'No students available' : `Generate certificates for all ${assessmentData.length} students`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Generate All
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <h3 className="text-sm font-medium text-gray-900 mb-1">No Students Found</h3>
+                      <p className="text-xs text-gray-500">There are no active students enrolled in this batch.</p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
       </div>
 
       {/* Cancellation Reason Modal */}
-      {showCancelModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Cancel Session {showCancelModal}</h3>
-            <p className="text-sm text-gray-600 mb-4">Please provide a reason for cancellation:</p>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="Enter cancellation reason..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-              rows="4"
-            />
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowCancelModal(null);
-                  setCancelReason('');
-                }}
-                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Confirm Cancellation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Student Payment Details Modal - Right Side Slide */}
       {showPaymentModal && (
         <div 
           className={`fixed inset-0 bg-black z-50 overflow-y-auto transition-opacity duration-300 ${
@@ -1834,6 +2260,358 @@ const BatchDetailViewPage = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              ) : rightView === 'assessment' ? (
+                /* Assessment Marks Entry Section */
+                <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h4 className="text-lg font-semibold text-gray-800">Assessment Marks Entry</h4>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {assessmentDate && (
+                        <span className="px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium bg-green-100 text-green-800">
+                          📅 {new Date(assessmentDate).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span className={`px-3 py-1 rounded-full text-[10px] sm:text-xs font-medium ${
+                        courseLanguage === 'German' ? 'bg-purple-100 text-purple-800' :
+                        courseLanguage === 'French' ? 'bg-blue-100 text-blue-800' :
+                        courseLanguage === 'Japanese' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {courseLanguage}
+                      </span>
+                      {loadingAssessment && (
+                        <span className="text-[10px] text-gray-500 animate-pulse">Loading...</span>
+                      )}
+                      {/* Temporary reset button for testing */}
+                      <button
+                        onClick={resetSubmittedState}
+                        className="px-2 py-1 text-[10px] bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                        title="Reset submitted state (testing only)"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingAssessment ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="w-10 h-10 border-4 rounded-full animate-spin" style={{ borderColor: '#f3f4f6', borderTopColor: '#3b82f6' }}></div>
+                    </div>
+                  ) : assessmentData.length > 0 ? (
+                    <>
+                      {/* Disclaimer for Completed Batches */}
+                      {batch?.status === 'completed' && (
+                        <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <div className="flex items-center">
+                            <svg className="w-4 h-4 text-yellow-600 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01" />
+                            </svg>
+                            <p className="text-xs text-yellow-700">
+                              <strong>Notice:</strong> Batch completed - Assessment data entry is not available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Assessment Table */}
+                      <div className={`bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden ${batch?.status === 'completed' ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Student Name
+                                </th>
+                                {languageColumns.map((column) => (
+                                  <th key={column.key} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {column.label}
+                                    <br />
+                                    <span className="text-xs text-gray-400">(Max: {column.maxMarks})</span>
+                                  </th>
+                                ))}
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Total
+                                  <br />
+                                  <span className="text-xs text-gray-400">(Max: {getMaxTotalMarks()})</span>
+                                </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  Certificate
+                                </th>
+                                {(userRole?.toLowerCase() === 'academic' || userRole?.toLowerCase() === 'academic_coordinator' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'manager') && (
+                                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Action
+                                  </th>
+                                )}
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {assessmentData.map((student, index) => {
+                                const uniqueKey = student.student_id ? `student-${student.student_id}` : `student-index-${index}`;
+                                return (
+                                  <tr key={uniqueKey} className="hover:bg-gray-50">
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {student.first_name} {student.last_name}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {student.registration_number || student.reg_number || student.reg_no || student.roll_number || student.roll_no || 'N/A'}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    {languageColumns.map((column) => (
+                                      <td key={`${uniqueKey}-${column.key}`} className="px-4 py-4 whitespace-nowrap">
+                                        {isEditing ? (
+                                          <input
+                                            key={`${uniqueKey}-${column.key}-input`}
+                                            type="number"
+                                            min="0"
+                                            max={column.maxMarks}
+                                            value={student[column.key] || 0}
+                                            onChange={(e) => handleMarkChange(index, column.key, e.target.value)}
+                                            disabled={isSubmitted || batch?.status === 'completed'}
+                                            className={`w-20 px-2 py-1 text-center border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                              isSubmitted || batch?.status === 'completed'
+                                                ? 'bg-gray-100 text-gray-500 border-gray-300 cursor-not-allowed' 
+                                                : 'border-gray-300'
+                                            }`}
+                                          />
+                                        ) : (
+                                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                            student[column.key] >= (column.maxMarks * 0.8)
+                                              ? 'bg-green-100 text-green-800'
+                                              : student[column.key] >= (column.maxMarks * 0.6)
+                                              ? 'bg-yellow-100 text-yellow-800'
+                                              : 'bg-red-100 text-red-800'
+                                          }`}>
+                                            {student[column.key] || 0}
+                                          </span>
+                                        )}
+                                      </td>
+                                    ))}
+                                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                                      <div className="font-semibold text-gray-900">
+                                        {getTotalMarks(student)}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        / {getMaxTotalMarks()}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                                      {generatedCertificates[student.student_id] ? (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <button
+                                            onClick={() => viewCertificate(student.student_id)}
+                                            className="text-green-600 hover:text-green-800 text-sm font-medium flex items-center justify-center underline"
+                                            title="View Certificate"
+                                          >
+                                            View Certificate
+                                          </button>
+                                          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                                            generatedCertificates[student.student_id].status === 'completed'
+                                              ? 'bg-green-100 text-green-700'
+                                              : 'bg-yellow-100 text-yellow-700'
+                                          }`}>
+                                            {generatedCertificates[student.student_id].status || 'pending'}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleGenerateCertificate(index)}
+                                          disabled={generatingCertificate || getTotalMarks(student) === 0}
+                                          className={`text-sm font-medium flex items-center justify-center px-3 py-1 rounded ${
+                                            generatingCertificate
+                                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                              : getTotalMarks(student) === 0
+                                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                                          }`}
+                                          title={getTotalMarks(student) === 0 ? 'No marks available for certificate' : 'Generate Certificate'}
+                                        >
+                                          {generatingCertificate ? (
+                                            <>
+                                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                              Generating...
+                                            </>
+                                          ) : (
+                                            'Generate'
+                                          )}
+                                        </button>
+                                      )}
+                                    </td>
+                                    {(userRole?.toLowerCase() === 'academic' || userRole?.toLowerCase() === 'academic_coordinator' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'manager') && (
+                                      <td className="px-4 py-4 whitespace-nowrap text-center">
+                                        {generatedCertificates[student.student_id] && (
+                                          <div className="flex items-center justify-center gap-2">
+                                            {generatedCertificates[student.student_id].status !== 'completed' && (
+                                              <button
+                                                onClick={() => handleApproveCertificate(generatedCertificates[student.student_id].certificateId || generatedCertificates[student.student_id].certificate_id, student.student_id)}
+                                                className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600 font-medium"
+                                              >
+                                                Approve
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={() => handleDeleteGeneratedCertificate(generatedCertificates[student.student_id].certificate_id || generatedCertificates[student.student_id].certificateId, student.student_id)}
+                                              className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 font-medium"
+                                            >
+                                              Delete
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-8">
+                        <div className="flex flex-wrap gap-3">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={handleSaveMarks}
+                                disabled={saving || !hasChanges || isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  saving || !hasChanges || isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {saving ? (
+                                  <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Saving...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Save Changes
+                                  </>
+                                )}
+                              </button>
+                              
+                              <button
+                                onClick={handleCancelEdit}
+                                disabled={saving}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  saving
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-gray-600 text-white hover:bg-gray-700'
+                                }`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={handleStartEdit}
+                                disabled={isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                                title={isSubmitted ? 'Marks already submitted - editing not allowed' : batch?.status === 'completed' ? 'Batch completed - editing not allowed' : 'Edit assessment marks'}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit Marks
+                              </button>
+                              
+                              <button
+                                onClick={handleSubmitMarks}
+                                disabled={submitting || isSubmitted || batch?.status === 'completed'}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  submitting || isSubmitted || batch?.status === 'completed'
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {submitting ? (
+                                  <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Submitting...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {isSubmitted || batch?.status === 'completed' ? 'Already Submitted' : 'Submit Final Marks'}
+                                  </>
+                                )}
+                              </button>
+                              
+                              <button
+                                onClick={async () => {
+                                  // Generate certificates for ALL students in the batch
+                                  const confirmGenerate = window.confirm(
+                                    `Are you sure you want to generate certificates for all ${assessmentData.length} students in this batch?`
+                                  );
+                                  if (!confirmGenerate) return;
+                                  
+                                  for (let index = 0; index < assessmentData.length; index++) {
+                                    try {
+                                      await handleGenerateCertificate(index);
+                                      // Small delay between generations to avoid overwhelming the server
+                                      await new Promise(resolve => setTimeout(resolve, 500));
+                                    } catch (error) {
+                                      console.error(`Failed to generate certificate for student at index ${index}:`, error);
+                                      // Continue with next student even if one fails
+                                    }
+                                  }
+                                  
+                                  alert(`Certificate generation completed for ${assessmentData.length} students!`);
+                                }}
+                                disabled={generatingCertificate || assessmentData.length === 0}
+                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center ${
+                                  generatingCertificate || assessmentData.length === 0
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                                }`}
+                                title={assessmentData.length === 0 ? 'No students available' : `Generate certificates for all ${assessmentData.length} students`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Generate All
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <h3 className="text-sm font-medium text-gray-900 mb-1">No Students Found</h3>
+                      <p className="text-xs text-gray-500">There are no active students enrolled in this batch.</p>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>

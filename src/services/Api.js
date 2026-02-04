@@ -27,6 +27,8 @@ export const SPEAKING_API_URL = getEnv("REACT_APP_SPEAKING_API_URL");
 export const READING_API_URL = getEnv("REACT_APP_READING_API_URL");
 export const WRITING_API_URL = getEnv("REACT_APP_WRITING_API_URL");
 export const ATTENDANCE_API_URL = getEnv("REACT_APP_ATTENDANCE_API_URL");
+export const ACADEMIC_API_URL = getEnv("REACT_APP_ACADEMIC_API_URL");
+export const ASSESSMENT_API_URL = getEnv("REACT_APP_ACADEMIC_API_URL");
 // ----------------------
 // Authentication Functions
 // ----------------------
@@ -143,6 +145,42 @@ export const uploadProfilePicture = async (file) => {
         return result.data; // Return the public URL
     } catch (error) {
         throw new Error(`Upload Profile Picture Error: ${error.message}`);
+    }
+};
+
+/**
+ * Upload signature for logged-in user
+ * @param {File} file - File object from input[type="file"]
+ * @returns {Promise<string>} - URL of uploaded signature
+ * @throws {Error} - Throws error if the request fails
+ */
+export const uploadSignature = async (file) => {
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            throw new Error("Authentication token not found");
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch(`${USER_API_URL}/user/upload-signature`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to upload signature");
+        }
+
+        return result.data; // Return the public URL
+    } catch (error) {
+        throw new Error(`Upload Signature Error: ${error.message}`);
     }
 };
 
@@ -2155,16 +2193,45 @@ export const getManagerAdminPaidInvoices = async () => {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
+                Authorization: `Bearer ${token}`,
             },
         });
 
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Failed to fetch paid invoices");
+        const result = await response.json();
 
-        return data;
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to fetch paid invoices");
+        }
+
+        return result;
     } catch (error) {
-        console.error("Failed to fetch paid invoices:", error);
+        throw error;
+    }
+};
+
+/**
+ * Get Revenue Statistics for Admin Dashboard
+ * GET /api/financial/revenue/stats
+ */
+export const getRevenueStats = async () => {
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${FINANCE_API_URL}/revenue/stats`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to fetch revenue statistics");
+        }
+
+        return result;
+    } catch (error) {
         throw error;
     }
 };
@@ -4586,6 +4653,63 @@ export const getLSRWByCourse = async (courseId, token, moduleType = 'listening')
 };
 
 /**
+ * Get aggregated dashboard stats for LSRW (Resource Manager)
+ * All content from listening, speaking, reading, writing
+ * @param {string} token - Authentication token
+ */
+export const getLSRWDashboardStats = async (token) => {
+    try {
+        const response = await fetch(`${LSRW_API_URL}/dashboard-stats`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            // Fallback for older backends if route not found
+            if (response.status === 404) return null;
+            throw new Error(data.error || data.message || 'Failed to fetch dashboard stats');
+        }
+        return data;
+    } catch (error) {
+        console.error("Dashboard stats API error:", error);
+        throw error;
+    }
+};
+
+/**
+ * Get all LSRW content for file view (Resource Manager) - Optimized
+ * @param {string} token - Authentication token
+ */
+export const getAllLSRWContent = async (token) => {
+    try {
+        const response = await fetch(`${LSRW_API_URL}/all-content`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            // Fallback for older backends if route not found
+            if (response.status === 404) return null;
+            throw new Error(data.error || data.message || 'Failed to fetch all content');
+        }
+        return data;
+    } catch (error) {
+        console.error("Get all content API error:", error);
+        throw error;
+    }
+};
+
+/**
  * Update session numbers for listening materials (reorder sessions)
  * @param {string} courseId - Course ID
  * @param {Array} sessionOrders - Array of { lsrw_id, session_number }
@@ -5456,3 +5580,760 @@ export const markAcademicNotificationAsRead = async (notificationId, token) => {
     }
 };
 
+/**
+ * Get manager notifications
+ * @param {string} token - Authentication token
+ */
+export const getManagerNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/manager/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        // Handle 404 - endpoint doesn't exist yet
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        // Handle other non-OK responses
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        // Only log non-404 errors
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching manager notifications:', error);
+        }
+        // Return empty array for 404 or other errors to prevent UI breaking
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark a manager notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markManagerNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/manager/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        // Handle 404 - endpoint doesn't exist yet
+        if (response.status === 404) {
+            return { success: true };
+        }
+        
+        // Handle other non-OK responses
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        // Only log non-404 errors
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error marking manager notification as read:', error);
+        }
+        // Return success for 404 to prevent UI breaking
+        return { success: true };
+    }
+};
+
+/**
+ * Get admin notifications
+ * @param {string} token - Authentication token
+ */
+export const getAdminNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/admin/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        // Handle 404 - endpoint doesn't exist yet
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        // Handle other non-OK responses
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        // Only log non-404 errors
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching admin notifications:', error);
+        }
+        // Return empty array for 404 or other errors to prevent UI breaking
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark an admin notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markAdminNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/admin/notifications/${notificationId}`, {
+            method: 'PATCH', // Changed to PATCH to match controller/route
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error marking admin notification as read:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get finance notifications
+ * @param {string} token - Authentication token
+ */
+export const getFinanceNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/finance-notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching finance notifications:', error);
+        }
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark a finance notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markFinanceNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/finance-notifications/${notificationId}/read`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error marking finance notification as read:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get state admin notifications
+ * @param {string} token - Authentication token
+ */
+export const getStateNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/state/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching state notifications:', error);
+        }
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark a state notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markStateNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/state/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error marking state notification as read:', error);
+        throw error;
+    }
+};
+/**
+ * Get center admin notifications
+ * @param {string} token - Authentication token
+ */
+export const getCenterNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/center/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching center notifications:', error);
+        }
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark a center notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markCenterNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/center/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error marking center notification as read:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get resource manager notifications
+ * @param {string} token - Authentication token
+ */
+export const getResourceNotifications = async (token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/resource/notifications`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (response.status === 404) {
+            return { success: true, data: [] };
+        }
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to fetch notifications' }));
+            throw new Error(data.error || 'Failed to fetch notifications');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+            console.error('Error fetching resource notifications:', error);
+        }
+        return { success: true, data: [] };
+    }
+};
+
+/**
+ * Mark a resource manager notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markResourceNotificationAsRead = async (notificationId, token) => {
+    try {
+        const response = await fetch(`${LIST_API_URL}/resource/notifications/${notificationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Failed to mark notification as read' }));
+            throw new Error(data.error || 'Failed to mark notification as read');
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error marking resource notification as read:', error);
+        throw error;
+    }
+};
+
+// ===========================================
+// CARD ADMIN NOTIFICATIONS API FUNCTIONS
+// ===========================================
+
+/**
+ * Get card admin notifications
+ * @param {string} token - Authentication token
+ */
+/**
+ * Get card admin notifications
+ * @param {string} token - Authentication token
+ */
+export const getCardAdminNotifications = async (token) => {
+    const response = await fetch(`${LIST_API_URL}/card-admin/notifications`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    return response.json();
+};
+
+/**
+ * Mark card admin notification as read
+ * @param {string} id - Notification ID
+ * @param {string} token - Authentication token
+ */
+export const markCardAdminNotificationAsRead = async (id, token) => {
+    const response = await fetch(`${LIST_API_URL}/card-admin/notifications/${id}`, {
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    return response.json();
+};
+
+// =========================
+// CERTIFICATE MANAGEMENT APIs
+// =========================
+
+/**
+ * Upload certificate
+ * @param {FormData} formData - FormData with language and certificate file
+ * @param {string} token - Authentication token
+ */
+export const uploadCertificate = async (formData, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/upload`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Upload failed');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Get all certificates
+ * @param {string} token - Authentication token
+ */
+export const getAllCertificates = async (token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to fetch certificates');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Update certificate alignment configuration
+ * @param {string} uploadId - ID of the certificate upload
+ * @param {Object} alignmentConfig - The alignment configuration object
+ * @param {string} token - Authentication token
+ */
+export const updateCertificateAlignment = async (uploadId, alignmentConfig, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/alignment/${uploadId}`, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ alignmentConfig }),
+    });
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to update alignment');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Delete certificate
+ * @param {string} uploadId - Certificate upload ID
+ * @param {string} token - Authentication token
+ */
+export const deleteCertificate = async (uploadId, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/${uploadId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to delete certificate');
+        }
+    }
+    
+    return response.json();
+};
+
+// =========================
+// ASSESSMENT MARKS APIs
+// =========================
+
+/**
+ * Get students in a batch with their assessment marks
+ * @param {string} batchId - Batch ID
+ * @param {string} token - Authentication token
+ */
+export const getBatchStudentsWithMarks = async (batchId, token) => {
+    const response = await fetch(`${ASSESSMENT_API_URL}/assessment/batch/${batchId}/students`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    return response.json();
+};
+
+/**
+ * Set assessment date for a batch
+ * @param {string} batchId - Batch ID
+ * @param {string} assessmentDate - Assessment date
+ * @param {string} token - Authentication token
+ */
+export const setBatchAssessmentDate = async (batchId, assessmentDate, token) => {
+    const response = await fetch(`${ASSESSMENT_API_URL}/assessment/batch/${batchId}/assessment-date`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ assessmentDate }),
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to set assessment date');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Save or update assessment marks for a batch
+ * @param {string} batchId - Batch ID
+ * @param {Array} marks - Array of student marks data
+ * @param {string} assessmentDate - Assessment date (optional for first time)
+ * @param {string} token - Authentication token
+ */
+export const saveBatchMarks = async (batchId, marks, assessmentDate, token) => {
+    const response = await fetch(`${ASSESSMENT_API_URL}/assessment/batch/${batchId}/marks`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ marks, assessmentDate }),
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to save assessment marks');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Generate certificate for a student
+ * @param {string} studentId - Student ID
+ * @param {string} batchId - Batch ID
+ * @param {string} token - Authentication token
+ */
+export const generateCertificate = async (studentId, batchId, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/generate`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ studentId, batchId }),
+    });
+    
+    // Check if response is ok before trying to parse JSON
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Try to parse as JSON first, if it fails, return the text as error
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to generate certificate');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Approve a generated certificate
+ * @param {string} certificateId - Certificate ID
+ * @param {string} token - Authentication token
+ */
+export const approveGeneratedCertificate = async (certificateId, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/approve`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ certificateId }),
+    });
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to approve certificate');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Delete a generated certificate
+ * @param {string} certificateId - Certificate ID
+ * @param {string} token - Authentication token
+ */
+export const deleteGeneratedCertificate = async (certificateId, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/generated/${certificateId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || errorText);
+        } catch {
+            throw new Error(errorText || 'Failed to delete certificate');
+        }
+    }
+    
+    return response.json();
+};
+
+/**
+ * Submit final assessment marks for a batch
+ * @param {string} batchId - Batch ID
+ * @param {string} token - Authentication token
+ */
+export const submitBatchMarks = async (batchId, token) => {
+    const response = await fetch(`${ASSESSMENT_API_URL}/assessment/batch/${batchId}/submit`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    return response.json();
+};
+
+/**
+ * Get batch assessment summary
+ * @param {string} batchId - Batch ID
+ * @param {string} token - Authentication token
+ */
+export const getBatchAssessmentSummary = async (batchId, token) => {
+    const response = await fetch(`${ASSESSMENT_API_URL}/assessment/batch/${batchId}/summary`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    return response.json();
+};
+
+/**
+ * Re-upload certificate
+ * @param {FormData} formData - FormData with language and certificate file
+ * @param {string} token - Authentication token
+ */
+export const reuploadCertificate = async (formData, token) => {
+    const response = await fetch(`${ACADEMIC_API_URL}/certificates/reupload`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+    });
+    return response.json();
+};

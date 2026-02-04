@@ -1,46 +1,76 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { LayoutDashboard } from "lucide-react";
 import Navbar from "../components/Navbar";
+import CenterHeader from "../components/CenterHeader";
 import CreateBatchRequestModal from "../components/CreateBatchRequestModal";
-import MiniCalendarWidget from "../components/MiniCalendarWidget";
-import CalendarNotificationBar from "../components/CalendarNotificationBar";
-import { getBatchesByCenter, getStudentsByCenter, getCenterByAdminId, getTeachersByCenter, getReferredStudents, getAllLeads, getDemoBatches } from "../services/Api";
+
+
+import { getBatchesByCenter, getStudentsByCenter, getCenterByAdminId, getTeachersByCenter, getReferredStudents, getAllLeads, getDemoBatches, getCurrentUserProfile } from "../services/Api";
 
 function CenterAdminPage() {
   const navigate = useNavigate();
-  const calendarRef = useRef(null);
+
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [demoUpcomingCount, setDemoUpcomingCount] = useState(0);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [selectedCenter, setSelectedCenter] = useState(null);
+  const [profileInfo, setProfileInfo] = useState(null);
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalTeachers: 0,
     totalBatches: 0,
-    activeStudents: 0,
-    referredStudents: 0
+    totalReferredStudents: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedCenter, setSelectedCenter] = useState(null);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [demoUpcomingCount, setDemoUpcomingCount] = useState(0);
 
-  // Get current user's name from token
   const token = localStorage.getItem("token");
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
-  const userName = (decodedToken?.full_name && 
-                    decodedToken.full_name !== null && 
-                    decodedToken.full_name !== undefined && 
-                    String(decodedToken.full_name).trim() !== '') 
-    ? decodedToken.full_name 
-    : (decodedToken?.name || 'Center Admin');
 
-  // Scroll to calendar function
-  const scrollToCalendar = () => {
-    if (calendarRef.current) {
-      calendarRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'start' 
-      });
+  // Priority: profileInfo.full_name > decodedToken.full_name > decodedToken.name
+  const getDisplayName = () => {
+    if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+      return profileInfo.full_name;
     }
+    if (decodedToken?.full_name && decodedToken.full_name.trim() !== '') {
+      return decodedToken.full_name;
+    }
+    return decodedToken?.name || 'Center Admin';
   };
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle(); // Initial check
+    
+    return () => {
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -175,62 +205,45 @@ function CenterAdminPage() {
     };
 
     fetchStats();
+
+    // Fetch profile info
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfileInfo(response.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+    return () => {
+      window.removeEventListener('profileUpdated', fetchProfileInfo);
+    };
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
-      <CalendarNotificationBar onScrollToCalendar={scrollToCalendar} />
-      {/* Fixed Sidebar - always visible and non-scrollable */}
-      <div className="fixed inset-y-0 left-0 z-40">
-        <Navbar
-          showCenterViewOptions={!!selectedCenter}
-          selectedCenter={selectedCenter}
-        />
-      </div>
-      
-      {/* Scrollable Content Area */}
-      <div className="flex-1 lg:ml-64 overflow-y-auto">
-        <div className="p-2 sm:p-4 lg:p-8">
-          <div className="mt-16 lg:mt-0">
-            <div className="max-w-7xl mx-auto space-y-8">
-              {/* Professional Welcome Section - Modern Design */}
-              <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-2xl shadow-2xl overflow-hidden">
-                <div className="relative p-5 sm:p-6 lg:p-7">
-                  <div className="flex items-start space-x-5">
-                    {/* Icon Container with Enhanced Design */}
-                    <div className="relative group flex-shrink-0">
-                      <div className="absolute inset-0 bg-white/30 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                      <div className="relative p-4 bg-white/25 backdrop-blur-md rounded-2xl border border-white/30 shadow-2xl group-hover:scale-105 transition-transform duration-300">
-                        <svg className="w-9 h-9 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
-                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      </div>
-                    </div>
 
-                    {/* Content Section with Professional Typography */}
-                    <div className="flex-1 min-w-0">
-                      <div className="space-y-1.5">
-                        <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold leading-tight tracking-tight">
-                          <span className="text-white">Welcome back, </span>
-                          <span className="bg-gradient-to-r from-yellow-300 via-pink-300 to-cyan-300 bg-clip-text text-transparent font-black drop-shadow-lg">
-                            {userName}
-                          </span>
-                          <span className="text-white">!</span>
-                        </h1>
-                        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white/95 leading-tight tracking-tight">
-                          Dashboard
-                        </h2>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-white/20">
-                        <p className="text-blue-50 text-sm sm:text-base font-medium leading-relaxed">
-                          Manage your center's students, teachers, and batches efficiently
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex relative">
+      <Navbar 
+        showCenterViewOptions={!!selectedCenter}
+        selectedCenter={selectedCenter}
+      />
+      
+      {/* Main Content Area - BERRY Style */}
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+        <CenterHeader 
+          title={`Welcome back, ${getDisplayName()}! 👋`} 
+          subtitle="Center Administrator Dashboard" 
+          icon={LayoutDashboard}
+        />
+
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
 
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-xl flex items-center space-x-4 shadow-lg">
@@ -246,94 +259,75 @@ function CenterAdminPage() {
                 </div>
               )}
 
-              {/* Enhanced Statistics Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+              {/* Enhanced Statistics Cards - BERRY Style (Matching Finance Dashboard) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
                 {[
                   {
                     title: "Total Students",
                     value: loading ? "..." : stats.totalStudents,
                     icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z",
-                    color: "blue",
-                    gradient: "from-blue-500 to-blue-600",
-                    bgColor: "bg-blue-50",
-                    textColor: "text-blue-600",
-                    iconBg: "bg-blue-100"
+                    gradient: "from-blue-600 to-blue-700",
+                    lightGradient: "from-blue-100 to-blue-200",
+                    path: "/center-admin/students"
                   },
                   {
                     title: "Active Students",
                     value: loading ? "..." : stats.activeStudents,
                     icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-                    color: "green",
-                    gradient: "from-green-500 to-green-600",
-                    bgColor: "bg-green-50",
-                    textColor: "text-green-600",
-                    iconBg: "bg-green-100"
+                    gradient: "from-emerald-600 to-emerald-700",
+                    lightGradient: "from-emerald-100 to-emerald-200",
+                    path: "/center-admin/students"
                   },
                   {
                     title: "Total Teachers",
                     value: loading ? "..." : stats.totalTeachers,
                     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z",
-                    color: "yellow",
-                    gradient: "from-yellow-500 to-orange-500",
-                    bgColor: "bg-yellow-50",
-                    textColor: "text-yellow-600",
-                    iconBg: "bg-yellow-100"
+                    gradient: "from-amber-500 to-amber-600",
+                    lightGradient: "from-amber-100 to-amber-200",
+                    path: "/center-admin/teachers"
                   },
                   {
                     title: "Total Batches",
                     value: loading ? "..." : stats.totalBatches,
                     icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
-                    color: "purple",
-                    gradient: "from-purple-500 to-purple-600",
-                    bgColor: "bg-purple-50",
-                    textColor: "text-purple-600",
-                    iconBg: "bg-purple-100"
+                    gradient: "from-purple-600 to-purple-700",
+                    lightGradient: "from-purple-100 to-purple-200",
+                    path: "/center-admin/batches"
                   },
                   {
                     title: "Referred Students",
                     value: loading ? "..." : stats.referredStudents,
                     icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
-                    color: "indigo",
-                    gradient: "from-indigo-500 to-indigo-600",
-                    bgColor: "bg-indigo-50",
-                    textColor: "text-indigo-600",
-                    iconBg: "bg-indigo-100"
+                    gradient: "from-indigo-600 to-indigo-700",
+                    lightGradient: "from-indigo-100 to-indigo-200",
+                    path: "/center-admin/referred-students"
                   }
                 ].map((stat, index) => (
                   <div
                     key={index}
-                    className={`${stat.bgColor} rounded-2xl shadow-lg border border-gray-200 p-6 transform transition-all duration-300 hover:scale-105 hover:shadow-xl group cursor-pointer`}
-                    onClick={() => {
-                      if (stat.title === "Referred Students") {
-                        navigate("/center-admin/referred-students");
-                      } else if (stat.title === "Total Students") {
-                        navigate("/center-admin/students");
-                      } else if (stat.title === "Total Teachers") {
-                        navigate("/center-admin/teachers");
-                      } else if (stat.title === "Total Batches") {
-                        navigate("/center-admin/batches");
-                      }
-                    }}
+                    className={`bg-gradient-to-br ${stat.gradient} rounded-2xl shadow-xl p-4 sm:p-5 relative overflow-hidden group cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-2xl`}
+                    onClick={() => navigate(stat.path)}
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`${stat.iconBg} p-3 rounded-xl group-hover:scale-110 transition-transform duration-300`}>
-                        <svg className={`w-6 h-6 ${stat.textColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={stat.icon} />
-                        </svg>
+                    <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white/10 rounded-full -translate-y-12 translate-x-12 sm:-translate-y-16 sm:translate-x-16 group-hover:scale-110 transition-transform duration-500"></div>
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-3 sm:mb-4">
+                        <div className="bg-white/20 backdrop-blur-md rounded-xl p-2 sm:p-3">
+                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={stat.icon} />
+                          </svg>
+                        </div>
+                        <span className="text-white/40 group-hover:text-white/60 transition-colors">
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </span>
                       </div>
-                      <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${stat.gradient} opacity-60`}></div>
-                    </div>
-                    <div>
-                      <p className={`${stat.textColor} text-sm font-semibold mb-1`}>{stat.title}</p>
-                      <h3 className="text-3xl font-bold text-gray-800 group-hover:text-gray-900 transition-colors">
-                        {stat.value}
-                      </h3>
-                    </div>
-                    <div className="mt-4 flex items-center text-xs text-gray-500">
-                      <span className="flex items-center">
-                        <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${stat.gradient} mr-2`}></div>
-                        Click to view details
-                      </span>
+                      <p className="text-white/80 text-xs font-bold uppercase tracking-wider">{stat.title}</p>
+                      <h3 className="text-white text-2xl sm:text-3xl font-black mt-1 leading-none">{stat.value}</h3>
+                      <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
+                        <span className="text-white/60 text-[10px] font-medium uppercase tracking-tighter">View Details</span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -411,16 +405,7 @@ function CenterAdminPage() {
                       hoverColor: "hover:bg-indigo-100",
                       icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
                     },
-                    {
-                      title: "Request New Batch",
-                      description: "Request batch creation",
-                      action: "modal",
-                      gradient: "from-green-500 to-green-600",
-                      bgColor: "bg-green-50",
-                      textColor: "text-green-700",
-                      hoverColor: "hover:bg-green-100",
-                      icon: "M12 6v6m0 0v6m0-6h6m-6 0H6"
-                    },
+
                     {
                       title: "Student & Elite Card",
                       description: "Manage elite cards",
@@ -459,20 +444,8 @@ function CenterAdminPage() {
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Event Calendar Widget */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2 bg-gradient-to-r from-green-500 to-teal-600 rounded-lg">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800">Event Calendar</h2>
-            </div>
-            <MiniCalendarWidget scrollRef={calendarRef} />
+
           </div>
         </div>
       </div>

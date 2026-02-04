@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import RejectionModal from "../components/RejectionModal";
 import EditBatchModal from "../components/EditBatchModal";
 import CreateBatchModal from "../components/CreateBatchModal";
 import EnrolledStudentsModal from "../components/EnrolledStudentsModal";
-import { getBatches, approveBatch, rejectBatch, updateBatch, createBatch, deleteBatch } from "../services/Api";
+import StartBatchModal from "../components/StartBatchModal";
+import { getBatches, approveBatch, rejectBatch, updateBatch, createBatch, deleteBatch, getCurrentUserProfile, BATCHES_URL } from "../services/Api";
+import ManagerNotificationBell from "../components/ManagerNotificationBell";
+import AcademicNotificationBell from "../components/AcademicNotificationBell";
+import AdminNotificationBell from "../components/AdminNotificationBell";
 
 const BatchApprovalPage = () => {
+  const navigate = useNavigate();
   const [allBatches, setAllBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,6 +24,22 @@ const BatchApprovalPage = () => {
   const [userRole, setUserRole] = useState(null);
   const [enrolledStudentsModal, setEnrolledStudentsModal] = useState({ isOpen: false, batchId: null, batchName: null });
   const [activeTab, setActiveTab] = useState('pending'); // 'pending', 'approved', 'completed'
+  const [currentPage, setCurrentPage] = useState(1);
+  const [startingBatch, setStartingBatch] = useState(null);
+  const [completingBatch, setCompletingBatch] = useState(null);
+  const [startBatchModal, setStartBatchModal] = useState({ isOpen: false, batchId: null, batchName: '' });
+  const [profileInfo, setProfileInfo] = useState(null);
+  const itemsPerPage = 8;
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
   // Filter batches by search term
   const filteredBatches = allBatches.filter((batch) => {
@@ -72,12 +94,46 @@ const BatchApprovalPage = () => {
     }
   };
 
+  // Pagination Logic
+  const tabBatches = getTabBatches();
+  const totalPages = Math.ceil(tabBatches.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedBatches = tabBatches.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset to page 1 when tab or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
+
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+
+  const getPageNumbers = () => {
+    const pages = [];
+    for (let i = 1; i <= totalPages; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
   const fetchAllBatches = async () => {
     try {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem("token");
-      const response = await getBatches(token);
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout - please try again')), 15000);
+      });
+      
+      const fetchPromise = getBatches(token);
+      
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
       
       console.log("🔄 Frontend: Fetched batches response:", response);
       
@@ -85,39 +141,141 @@ const BatchApprovalPage = () => {
         console.log("🔄 Frontend: Setting batches data:", response.data);
         setAllBatches(response.data);
       } else {
-        throw new Error("Invalid response format from server");
+        throw new Error(response?.error || "Invalid response format from server");
       }
     } catch (error) {
       console.error("Failed to fetch batches:", error);
-      setError("Failed to load batches: " + error.message);
+      setError(error.message || "Failed to load batches");
       setAllBatches([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // Get current user's name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const tokenFullName = decodedToken?.full_name || null;
+
+
+
+  const getDisplayName = () => {
+    if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+      return profileInfo.full_name;
+    }
+    if (tokenFullName && tokenFullName.trim() !== '') {
+      return tokenFullName;
+    }
+    return userRole?.charAt(0).toUpperCase() + userRole?.slice(1) || "User";
+  };
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle();
+    return () => window.removeEventListener('sidebarToggle', handleSidebarToggle);
+  }, []);
+
+  // Fetch profile info
+  useEffect(() => {
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfileInfo(response.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+    return () => window.removeEventListener('profileUpdated', fetchProfileInfo);
+  }, []);
+
   useEffect(() => {
     fetchAllBatches();
   }, []);
+
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+  };
 
   const handleApprove = async (batchId) => {
     try {
       setActionLoading(prev => ({ ...prev, [batchId]: 'approving' }));
       const token = localStorage.getItem("token");
       
-      const response = await approveBatch(token, batchId);
+      // Add retry mechanism
+      const maxRetries = 2;
+      let retryCount = 0;
+      let lastError = null;
       
-      if (response?.success) {
-        alert("Batch approved successfully!");
-        await fetchAllBatches();
-      } else {
-        throw new Error(response?.message || "Failed to approve batch");
+      while (retryCount < maxRetries) {
+        try {
+          const response = await approveBatch(token, batchId);
+          
+          if (response?.success) {
+            alert("Batch approved successfully!");
+            setActionLoading(prev => ({ ...prev, [batchId]: false }));
+            await fetchAllBatches();
+            return;
+          } else {
+            lastError = response?.message || "Failed to approve batch";
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+              const currentDelay = 1000 * retryCount;
+              console.log(`Retry ${retryCount}/${maxRetries} for batch ${batchId}`);
+              await new Promise(resolve => {
+                const timer = setTimeout(resolve, currentDelay);
+                return () => clearTimeout(timer);
+              });
+            }
+          }
+        } catch (fetchError) {
+          lastError = fetchError.message || "Network error";
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            const currentDelay = 1000 * retryCount;
+            console.log(`Retry ${retryCount}/${maxRetries} for batch ${batchId} - Network error`);
+            await new Promise(resolve => setTimeout(resolve, currentDelay));
+          }
+        }
       }
+      
+      // All retries failed
+      throw new Error(lastError);
     } catch (error) {
       console.error("Approve batch error:", error);
-      alert("Failed to approve batch. Please try again.");
+      alert(`Failed to approve batch: ${error.message}`);
     } finally {
-      setActionLoading(prev => ({ ...prev, [batchId]: null }));
+      setActionLoading(prev => ({ ...prev, [batchId]: false }));
     }
   };
 
@@ -216,27 +374,91 @@ const BatchApprovalPage = () => {
     }
   };
 
-  const formatTime = (timeString) => {
-    if (!timeString) return "N/A";
-    return timeString;
+  const handleBatchNameClick = (batch) => {
+    navigate(`/manage-batches/${batch.batch_id}`);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
+  const handleStartBatchClick = (batchId, batchName) => {
+    setStartBatchModal({ isOpen: true, batchId, batchName });
   };
+
+  const handleStartBatchConfirm = async (totalSessions) => {
+    try {
+      setError(null);
+      setStartingBatch(startBatchModal.batchId);
+      const token = localStorage.getItem("token");
+
+      const response = await fetch(`${BATCHES_URL}/${startBatchModal.batchId}/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          start_date: new Date().toISOString(),
+          total_sessions: totalSessions,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("Batch started successfully!");
+        await fetchAllBatches();
+        setStartBatchModal({ isOpen: false, batchId: null, batchName: '' });
+      } else {
+        throw new Error(data.error || "Failed to start batch");
+      }
+    } catch (error) {
+      console.error("Failed to start batch:", error);
+      setError("Failed to start batch: " + error.message);
+      alert("Failed to start batch. Please try again.");
+    } finally {
+      setStartingBatch(null);
+    }
+  };
+
+  const handleCompleteBatch = async (batchId) => {
+    try {
+      setError(null);
+      setCompletingBatch(batchId);
+      const token = localStorage.getItem("token");
+
+      const response = await fetch(`${BATCHES_URL}/${batchId}/complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          end_date: new Date().toISOString(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("Batch completed successfully!");
+        await fetchAllBatches();
+      } else {
+        throw new Error(data.error || "Failed to complete batch");
+      }
+    } catch (error) {
+      console.error("Failed to complete batch:", error);
+      setError("Failed to complete batch: " + error.message);
+      alert("Failed to complete batch. Please try again.");
+    } finally {
+      setCompletingBatch(null);
+    }
+  };
+
+
 
   if (loading) {
     return (
-      <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
+      <div className="min-h-screen bg-gray-50 flex">
         <Navbar />
-        <div className="flex-1 lg:ml-64 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
@@ -249,85 +471,210 @@ const BatchApprovalPage = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gray-50 flex">
       <Navbar />
-      <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-        <div className="p-4 lg:p-8">
-          <div className="mt-16 lg:mt-0">
-            <div className="max-w-7xl mx-auto">
-              {/* Enhanced Header Section */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-xl p-4 sm:p-6 lg:p-8 mb-6 sm:mb-8 relative overflow-hidden">
-                <div className="absolute inset-0 bg-black/10"></div>
-                <div className="relative z-10">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
-                    <div className="flex items-center space-x-3 sm:space-x-4">
-                      <div className="p-2 sm:p-3 bg-white/20 rounded-xl backdrop-blur-sm flex-shrink-0">
-                        <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mb-1 sm:mb-2 truncate">Batch Management</h1>
-                        <p className="text-blue-100 text-sm sm:text-base lg:text-lg leading-tight">Review and manage all batch requests from Academic Coordinators</p>
-                      </div>
-                    </div>
-                    {canCreate() && (
-                      <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 sm:px-6 sm:py-3 rounded-xl hover:bg-white/30 transition-all duration-300 flex items-center justify-center gap-2 sm:gap-3 shadow-lg hover:shadow-xl transform hover:scale-105 border border-white/30 w-full sm:w-auto"
-                      >
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        <span className="text-sm sm:text-base font-semibold">Create New Batch</span>
-                      </button>
+
+      {/* Main Content Area - BERRY Style */}
+      <div 
+        className="flex-1 overflow-y-auto transition-all duration-300" 
+        style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}
+      >
+        {/* Navbar - BERRY Style (Matching ManagerEventCalendarPage) */}
+        <nav className="bg-white border-b border-gray-200 sticky top-0 z-20 lg:z-30">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-3 sm:py-4 min-h-[4rem]">
+              <div className="flex items-center gap-2 sm:gap-3 md:gap-4 min-w-0 flex-1">
+                {/* Left: Mobile Toggle & Title */}
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <button
+                    onClick={toggleMobileMenu}
+                    className="lg:hidden p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+                    title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                  >
+                    {isMobileMenuOpen ? (
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                      </svg>
                     )}
+                  </button>
+                  <div
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shadow-md flex-shrink-0"
+                    style={{
+                      background: "linear-gradient(to bottom right, #2196f3, #1976d2)",
+                    }}
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                   </div>
-                  
-                  {/* Quick Stats */}
-                  <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-blue-100 text-xs sm:text-sm font-medium truncate">Pending Batches</p>
-                          <p className="text-xl sm:text-2xl font-bold text-white">{pendingBatches.length}</p>
-                        </div>
-                        <div className="p-2 bg-white/20 rounded-lg flex-shrink-0 ml-2">
-                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-blue-100 text-xs sm:text-sm font-medium truncate">Approved Batches</p>
-                          <p className="text-xl sm:text-2xl font-bold text-white">{approvedBatches.length}</p>
-                        </div>
-                        <div className="p-2 bg-white/20 rounded-lg flex-shrink-0 ml-2">
-                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20 sm:col-span-2 lg:col-span-1">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-blue-100 text-xs sm:text-sm font-medium truncate">Rejected Batches</p>
-                          <p className="text-xl sm:text-2xl font-bold text-white">{rejectedBatches.length}</p>
-                        </div>
-                        <div className="p-2 bg-white/20 rounded-lg flex-shrink-0 ml-2">
-                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="min-w-0">
+                    <h1 className="text-base sm:text-xl md:text-2xl font-bold text-gray-800 truncate">
+                      Batch Approval
+                    </h1>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 hidden sm:block">
+                      Review and manage batch lifecycle
+                    </p>
                   </div>
                 </div>
               </div>
+
+              <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+
+                {/* Notifications */}
+                {userRole === 'manager' && <ManagerNotificationBell />}
+                {userRole === 'academic' && <AcademicNotificationBell />}
+                {userRole === 'admin' && <AdminNotificationBell />}
+
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+                    {profileInfo?.profile_picture ? (
+                      <img
+                        src={profileInfo.profile_picture}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-gray-200 cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all shadow-md">
+                        {getDisplayName()?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      {/* Backdrop */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      ></div>
+                      
+                      {/* Dropdown Box */}
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        {/* Header Section */}
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Welcome, {getDisplayName() || "User"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1 capitalize">{userRole}</p>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="py-2">
+                          {/* Account Settings */}
+                          <button
+                            onClick={() => {
+                              navigate('/manager/account-settings');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+
+                          {/* Logout */}
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem("token");
+                              navigate("/login");
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 hover:text-red-700 transition-all duration-200 border-t border-gray-200"
+                          >
+                            <svg className="w-5 h-5 text-gray-400 group-hover:text-red-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </nav>
+
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {/* Quick Stats Grid - Matching ManageStatesPage Style */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              {/* Pending Stats Card */}
+              <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl shadow-lg p-4 sm:p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8 sm:-translate-y-10 sm:translate-x-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 sm:p-3">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-yellow-100 text-xs sm:text-sm font-medium mb-1 uppercase tracking-wider">Pending Batches</p>
+                  <p className="text-white text-3xl sm:text-4xl font-bold tabular-nums">{pendingBatches.length}</p>
+                </div>
+              </div>
+
+              {/* Approved Stats Card */}
+              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-4 sm:p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8 sm:-translate-y-10 sm:translate-x-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 sm:p-3">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-green-100 text-xs sm:text-sm font-medium mb-1 uppercase tracking-wider">Approved Batches</p>
+                  <p className="text-white text-3xl sm:text-4xl font-bold tabular-nums">{approvedBatches.length}</p>
+                </div>
+              </div>
+
+              {/* Completed Stats Card */}
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-4 sm:p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8 sm:-translate-y-10 sm:translate-x-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 sm:p-3">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-blue-100 text-xs sm:text-sm font-medium mb-1 uppercase tracking-wider">Completed Batches</p>
+                  <p className="text-white text-3xl sm:text-4xl font-bold tabular-nums">{completedBatches.length}</p>
+                </div>
+              </div>
+
+              {/* Rejected Stats Card */}
+              <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-lg p-4 sm:p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8 sm:-translate-y-10 sm:translate-x-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 sm:p-3">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-red-100 text-xs sm:text-sm font-medium mb-1 uppercase tracking-wider">Rejected Batches</p>
+                  <p className="text-white text-3xl sm:text-4xl font-bold tabular-nums">{rejectedBatches.length}</p>
+                </div>
+              </div>
+            </div>
 
               {/* Enhanced Error Display */}
               {error && (
@@ -345,541 +692,381 @@ const BatchApprovalPage = () => {
                 </div>
               )}
 
-              {/* Enhanced Search Section */}
-              <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 mb-4 sm:mb-6 border border-gray-100">
-                {/* Search Section Header */}
-                <div className="flex items-center mb-3 sm:mb-4">
-                  <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg mr-2 sm:mr-3 flex-shrink-0">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Search Section - BERRY Style */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-50 rounded-lg">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Search & Filter Batches</h2>
-                    <p className="text-xs sm:text-sm text-gray-500 truncate">Find batches by name, center, course, teacher, or creator</p>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">Search & Filter Batches</h2>
+                    <p className="text-xs sm:text-sm text-gray-500 font-medium">Find batches by name, course, center, or teacher</p>
                   </div>
                 </div>
                 
-                <div className="flex flex-col gap-3 sm:gap-4">
-                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                    <div className="flex-1 relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Search batches..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400 text-sm sm:text-base"
-                      />
-                    </div>
-                    {searchTerm && (
-                      <button
-                        onClick={() => setSearchTerm("")}
-                        className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        <span className="hidden sm:inline">Clear</span>
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Search Results Info */}
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="Search batches..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-11 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm"
+                  />
+                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
                   {searchTerm && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <p className="text-xs sm:text-sm text-gray-600">
-                        Showing {filteredBatches.length} of {allBatches.length} batches
-                      </p>
-                      {filteredBatches.length === 0 && (
-                        <p className="text-xs sm:text-sm text-red-600 font-medium">
-                          No batches found matching your search
-                        </p>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 rounded-full transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   )}
                 </div>
               </div>
+            </div>
 
-              {/* Tab Navigation - Mobile Responsive */}
-              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 bg-white rounded-xl shadow-lg p-2 sm:p-2 mb-6">
+            {/* Tab Navigation & Create Batch Button - BERRY Style */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center space-x-2 p-1.5 bg-gray-200/50 rounded-2xl max-w-fit overflow-x-auto shadow-sm">
                 <button
                   onClick={() => setActiveTab('pending')}
-                  className={`flex-1 px-3 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold transition-all duration-300 ${
+                  className={`flex items-center px-6 py-2.5 rounded-xl font-bold transition-all duration-300 whitespace-nowrap ${
                     activeTab === 'pending'
-                      ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg sm:transform sm:scale-105'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-white text-yellow-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-sm sm:text-base">Pending</span>
-                    {pendingBatches.length > 0 && (
-                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-xs font-bold ${
-                        activeTab === 'pending' ? 'bg-white text-yellow-600' : 'bg-yellow-100 text-yellow-600'
-                      }`}>
-                        {pendingBatches.length}
-                      </span>
-                    )}
-                  </div>
+                  <span className="mr-2">Pending</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs ${
+                    activeTab === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {pendingBatches.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveTab('approved')}
-                  className={`flex-1 px-3 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold transition-all duration-300 ${
+                  className={`flex items-center px-6 py-2.5 rounded-xl font-bold transition-all duration-300 whitespace-nowrap ${
                     activeTab === 'approved'
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg sm:transform sm:scale-105'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-white text-green-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-sm sm:text-base">
-                      <span className="hidden sm:inline">Approved/Started</span>
-                      <span className="sm:hidden">Approved</span>
-                    </span>
-                    {approvedBatches.length > 0 && (
-                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-xs font-bold ${
-                        activeTab === 'approved' ? 'bg-white text-green-600' : 'bg-green-100 text-green-600'
-                      }`}>
-                        {approvedBatches.length}
-                      </span>
-                    )}
-                  </div>
+                  <span className="mr-2">Approved</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs ${
+                    activeTab === 'approved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {approvedBatches.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveTab('completed')}
-                  className={`flex-1 px-3 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold transition-all duration-300 ${
+                  className={`flex items-center px-6 py-2.5 rounded-xl font-bold transition-all duration-300 whitespace-nowrap ${
                     activeTab === 'completed'
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg sm:transform sm:scale-105'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  <div className="flex items-center justify-center space-x-1 sm:space-x-2">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-sm sm:text-base">Completed</span>
-                    {completedBatches.length > 0 && (
-                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-xs font-bold ${
-                        activeTab === 'completed' ? 'bg-white text-blue-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {completedBatches.length}
-                      </span>
-                    )}
-                  </div>
+                  <span className="mr-2">Completed</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs ${
+                    activeTab === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {completedBatches.length}
+                  </span>
                 </button>
               </div>
 
-              {/* Enhanced Table Section */}
-              {getTabBatches().length > 0 && (
-                <div className="mb-8">
-                  <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                    {/* Enhanced Table Header */}
-                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
-                      <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="truncate">All Batches Overview</span>
-                      </h2>
-                    </div>
-                    
-                    {/* Single Table with Sticky Header */}
-                    <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gradient-to-r from-blue-600 to-purple-600 sticky top-0 z-10">
-                          <tr>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '220px', minWidth: '220px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <span className="truncate">Batch Details</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '200px', minWidth: '200px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                </svg>
-                                <span className="truncate">Center & Course</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '150px', minWidth: '150px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                </svg>
-                                <span className="truncate">Capacity</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '180px', minWidth: '180px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                                <span className="truncate">Teacher & Timing</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '140px', minWidth: '140px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="truncate">Created By</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '140px', minWidth: '140px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="truncate">Approved By</span>
-                              </div>
-                            </th>
-                            <th className="px-6 py-6 text-left text-xs font-semibold text-white uppercase tracking-wider" style={{ width: '150px', minWidth: '150px' }}>
-                              <div className="flex items-center">
-                                <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                <span className="truncate">Actions</span>
-                              </div>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                          {/* Display batches based on active tab */}
-                          {getTabBatches().map((batch, index) => {
-                            // Determine border color based on status
-                            const getBorderColor = () => {
-                              if (batch.status === 'Pending') return 'border-yellow-400';
-                              if (batch.status === 'Approved' || batch.status === 'Started') return 'border-green-400';
-                              if (batch.status === 'Completed') return 'border-blue-400';
-                              if (batch.status === 'Rejected') return 'border-red-400';
-                              return 'border-gray-300';
-                            };
-                            
-                            const getHoverColor = () => {
-                              if (batch.status === 'Pending') return 'hover:from-yellow-50 hover:to-orange-50';
-                              if (batch.status === 'Approved' || batch.status === 'Started') return 'hover:from-green-50 hover:to-emerald-50';
-                              if (batch.status === 'Completed') return 'hover:from-blue-50 hover:to-indigo-50';
-                              if (batch.status === 'Rejected') return 'hover:from-red-50 hover:to-pink-50';
-                              return 'hover:from-gray-50 hover:to-blue-50';
-                            };
-
-                            // Get status badge styling
-                            const getStatusBadge = () => {
-                              if (batch.status === 'Pending') {
-                                return {
-                                  bg: 'bg-gradient-to-r from-yellow-100 to-orange-100',
-                                  text: 'text-yellow-800',
-                                  border: 'border-yellow-200',
-                                  dot: 'bg-yellow-400',
-                                  label: 'Pending Approval'
-                                };
-                              } else if (batch.status === 'Approved' || batch.status === 'Started') {
-                                return {
-                                  bg: 'bg-gradient-to-r from-green-100 to-emerald-100',
-                                  text: 'text-green-800',
-                                  border: 'border-green-200',
-                                  dot: 'bg-green-400',
-                                  label: batch.status
-                                };
-                              } else if (batch.status === 'Completed') {
-                                return {
-                                  bg: 'bg-gradient-to-r from-blue-100 to-indigo-100',
-                                  text: 'text-blue-800',
-                                  border: 'border-blue-200',
-                                  dot: 'bg-blue-400',
-                                  label: 'Completed'
-                                };
-                              } else if (batch.status === 'Rejected') {
-                                return {
-                                  bg: 'bg-gradient-to-r from-red-100 to-pink-100',
-                                  text: 'text-red-800',
-                                  border: 'border-red-200',
-                                  dot: 'bg-red-400',
-                                  label: 'Rejected'
-                                };
-                              }
-                              return {
-                                bg: 'bg-gradient-to-r from-gray-100 to-gray-100',
-                                text: 'text-gray-800',
-                                border: 'border-gray-200',
-                                dot: 'bg-gray-400',
-                                label: batch.status || 'Unknown'
-                              };
-                            };
-
-                            // Get icon background color
-                            const getIconBg = () => {
-                              if (batch.status === 'Pending') return 'from-yellow-400 to-orange-400';
-                              if (batch.status === 'Approved' || batch.status === 'Started') return 'from-green-400 to-emerald-400';
-                              if (batch.status === 'Completed') return 'from-blue-400 to-indigo-400';
-                              if (batch.status === 'Rejected') return 'from-red-400 to-pink-400';
-                              return 'from-gray-400 to-gray-400';
-                            };
-
-                            const statusBadge = getStatusBadge();
-
-                            return (
-                            <tr key={batch.batch_id} className={`hover:bg-gradient-to-r ${getHoverColor()} transition-all duration-200 border-l-4 ${getBorderColor()}`}>
-                              <td className="px-6 py-6" style={{ width: '220px', minWidth: '220px' }}>
-                                <div className="flex items-start space-x-2 sm:space-x-3">
-                                  <div className="flex-shrink-0">
-                                    <div className={`w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r ${getIconBg()} rounded-lg flex items-center justify-center`}>
-                                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                    </div>
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm sm:text-lg font-semibold text-gray-900 truncate" title={batch.batch_name}>
-                                      {batch.batch_name}
-                                    </div>
-                                    <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs sm:text-sm text-gray-500">
-                                      <span className="flex items-center">
-                                        <svg className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        {batch.duration} months
-                                      </span>
-                                      <span className="flex items-center">
-                                        <svg className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                        </svg>
-                                        {batch.max_students} seats
-                                      </span>
-                                    </div>
-                                    <div className="mt-2">
-                                      <span className={`inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.text} border ${statusBadge.border}`}>
-                                        <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 ${statusBadge.dot} rounded-full mr-1.5 sm:mr-2 ${batch.status === 'Pending' ? 'animate-pulse' : ''}`}></div>
-                                        <span className="hidden sm:inline">{statusBadge.label}</span>
-                                        <span className="sm:hidden">{batch.status}</span>
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-6" style={{ width: '200px', minWidth: '200px' }}>
-                                <div className="min-w-0">
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                      </svg>
-                                    </div>
-                                    <div className="text-sm font-semibold text-gray-900 truncate" title={batch.center_name}>
-                                      {batch.center_name}
-                                    </div>
-                                  </div>
-                                  <div className="text-sm text-gray-600 truncate" title={batch.course_name}>
-                                    {batch.course_name}
-                                  </div>
-                                  <div className="text-xs text-gray-500 truncate mt-1">
-                                    {batch.course_type} • {batch.mode}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-6 whitespace-normal" style={{ width: '150px', minWidth: '150px' }}>
-                                <div 
-                                  className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
-                                  onClick={() => setEnrolledStudentsModal({ isOpen: true, batchId: batch.batch_id, batchName: batch.batch_name })}
-                                >
-                                  <div className="flex-1">
-                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
-                                      <span>Students</span>
-                                      <span className="font-semibold text-blue-600">{batch.student_count ?? 0}/{batch.max_students}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                      <div 
-                                        className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-                                        style={{ width: `${Math.min(((batch.student_count ?? 0) / batch.max_students) * 100, 100)}%` }}
-                                      ></div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-6" style={{ width: '180px', minWidth: '180px' }}>
-                                <div className="min-w-0">
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                      </svg>
-                                    </div>
-                                    <div className="text-sm font-semibold text-gray-900 truncate" title={batch.teacher_name}>
-                                      {batch.teacher_name}
-                                    </div>
-                                  </div>
-                                  {batch.assistant_tutor_name && (
-                                    <div className="flex items-center space-x-2 mb-2">
-                                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                      </div>
-                                      <div className="text-xs text-gray-600 truncate" title={batch.assistant_tutor_name}>
-                                        Asst: {batch.assistant_tutor_name}
-                                      </div>
-                                    </div>
-                                  )}
-                                  <div className="text-sm text-gray-600">
-                                    {formatTime(batch.time_from)} - {formatTime(batch.time_to)}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-6" style={{ width: '140px', minWidth: '140px' }}>
-                                <div className="min-w-0">
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                    </div>
-                                    <div className="text-sm font-semibold text-gray-900 truncate" title={batch.created_by}>
-                                      {batch.created_by}
-                                    </div>
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {formatDate(batch.created_at)}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-6" style={{ width: '140px', minWidth: '140px' }}>
-                                <div className="min-w-0">
-                                  {batch.approved_by ? (
-                                    <>
-                                      <div className="text-sm font-semibold text-gray-900">{batch.approved_by}</div>
-                                      <div className="text-xs text-gray-500">{formatDate(batch.approved_at)}</div>
-                                    </>
-                                  ) : (
-                                    <div className="text-sm text-gray-400 italic">Awaiting approval</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-6" style={{ width: '150px', minWidth: '150px' }}>
-                                <div className="flex flex-col space-y-2">
-                                  {batch.status === 'Pending' && canApprove() ? (
-                                    <>
-                                      <button
-                                        onClick={() => handleApprove(batch.batch_id)}
-                                        disabled={actionLoading[batch.batch_id]}
-                                        className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm font-semibold rounded-xl hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
-                                      >
-                                        {actionLoading[batch.batch_id] === 'approving' ? (
-                                          <>
-                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Approving...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                            </svg>
-                                            Approve
-                                          </>
-                                        )}
-                                      </button>
-                                      <button
-                                        onClick={() => handleRejectClick(batch.batch_id, batch.batch_name)}
-                                        disabled={actionLoading[batch.batch_id]}
-                                        className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-sm font-semibold rounded-xl hover:from-red-600 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
-                                      >
-                                        {actionLoading[batch.batch_id] === 'rejecting' ? (
-                                          <>
-                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Rejecting...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                            Reject
-                                          </>
-                                        )}
-                                      </button>
-                                    </>
-                                  ) : batch.status !== 'Pending' && canEdit() ? (
-                                    <div className="flex flex-col space-y-2">
-                                      <button
-                                        onClick={() => setEditingBatch(batch)}
-                                        className="inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-semibold rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200"
-                                      >
-                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                        Edit
-                                      </button>
-                                      {canDelete() && (
-                                        <button
-                                          onClick={() => handleDeleteBatch(batch.batch_id)}
-                                          disabled={actionLoading[batch.batch_id]}
-                                          className="inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-semibold rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                          </svg>
-                                          Delete
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="text-center py-2">
-                                      <span className="text-sm text-gray-400 italic">No actions available</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                            );
-                          })}
-
-                          {/* Approved and Rejected sections removed - now handled by activeTab */}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Enhanced Empty State for Tab */}
-              {getTabBatches().length === 0 && (
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-                  <div className="text-center py-16 px-8">
-                    <div className="mb-8">
-                      <div className="w-24 h-24 mx-auto bg-gradient-to-r from-gray-100 to-blue-100 rounded-full flex items-center justify-center mb-6">
-                        <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                        No {activeTab === 'pending' ? 'Pending' : activeTab === 'approved' ? 'Approved/Started' : 'Completed'} batches
-                      </h3>
-                      <p className="text-lg text-gray-500 max-w-lg mx-auto mb-8">
-                        No batches found for this category
-                      </p>
-                    </div>
-                  </div>
-                </div>
+              {canCreate() && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-all duration-300 shadow-md hover:shadow-xl transform hover:-translate-y-0.5 active:scale-95 group"
+                >
+                  <svg className="w-5 h-5 mr-2 group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create New Batch
+                </button>
               )}
             </div>
+
+            {/* Table Area - EXACTLY MATCHES ManageBatchesPage Style */}
+            {tabBatches.length > 0 ? (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0 z-10">
+                      <tr>
+                        <th className="px-4 sm:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch Name</th>
+                        <th className="px-4 sm:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Name</th>
+                        <th className="px-4 sm:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                        <th className="px-4 sm:px-6 py-3.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {paginatedBatches.map((batch) => (
+                        <tr key={batch.batch_id} className="hover:bg-blue-50 transition-colors">
+                          {/* Batch Name - Clickable (Consistent with ManageBatchesPage) */}
+                          <td className="px-4 sm:px-6 py-4">
+                            <div 
+                              className="flex items-center gap-3 cursor-pointer hover:text-blue-600 group/name"
+                              onClick={() => handleBatchNameClick(batch)}
+                            >
+                              <div className={`w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm group-hover/name:scale-105 transition-transform`}>
+                                <span className="text-white font-bold text-sm">
+                                  {batch.batch_name?.charAt(0) || 'B'}
+                                </span>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-gray-900 group-hover/name:text-blue-600 truncate">
+                                  {batch.batch_name || 'N/A'}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {batch.duration || 'N/A'} months
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          
+                          {/* Course Name */}
+                          <td className="px-4 sm:px-6 py-4">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-gray-900 truncate max-w-[200px]" title={batch.course_name}>
+                                {batch.course_name || 'N/A'}
+                              </p>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                batch.course_type === "Immersion"
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}>
+                                {batch.course_type || 'N/A'}
+                              </span>
+                            </div>
+                          </td>
+                          
+                          {/* Status */}
+                          <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                              batch.status === 'Approved'
+                                ? "bg-blue-100 text-blue-800"
+                                : batch.status === 'Started'
+                                ? "bg-green-100 text-green-800"
+                                : batch.status === 'Completed'
+                                ? "bg-purple-100 text-purple-800"
+                                : batch.status === 'Cancelled'
+                                ? "bg-red-100 text-red-800"
+                                : batch.status === 'Pending'
+                                ? "bg-yellow-100 text-yellow-800"
+                                : batch.status === 'Rejected'
+                                ? "bg-red-100 text-red-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}>
+                              {batch.status || 'N/A'}
+                            </span>
+                          </td>
+                          
+                          {/* Actions - Stylized like ManageBatchesPage */}
+                          <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Start Batch Button - For approved batches */}
+                              {batch.status === 'Approved' && (userRole === 'academic' || userRole === 'manager' || userRole === 'admin') && (
+                                <button
+                                  onClick={() => handleStartBatchClick(batch.batch_id, batch.batch_name)}
+                                  disabled={startingBatch === batch.batch_id}
+                                  className="inline-flex items-center px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                                >
+                                  {startingBatch === batch.batch_id ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 mr-1 border border-white border-t-transparent"></div>
+                                      Starting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      Start
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Complete Batch Button - For started batches */}
+                              {batch.status === 'Started' && (userRole === 'academic' || userRole === 'manager' || userRole === 'admin') && (
+                                <button
+                                  onClick={() => handleCompleteBatch(batch.batch_id)}
+                                  disabled={completingBatch === batch.batch_id}
+                                  className="inline-flex items-center px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                                >
+                                  {completingBatch === batch.batch_id ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 mr-1 border border-white border-t-transparent"></div>
+                                      Completing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      Complete
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Approve Button - If Pending and canApprove */}
+                              {batch.status === 'Pending' && canApprove() && (
+                                <button
+                                  onClick={() => handleApprove(batch.batch_id)}
+                                  disabled={actionLoading[batch.batch_id] === 'approving'}
+                                  className="inline-flex items-center px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 disabled:opacity-50 shadow-sm"
+                                >
+                                  {actionLoading[batch.batch_id] === 'approving' ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 mr-1 border border-white border-t-transparent"></div>
+                                      Approving...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      Approve
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Reject Button - If Pending and canApprove */}
+                              {batch.status === 'Pending' && canApprove() && (
+                                <button
+                                  onClick={() => handleRejectClick(batch.batch_id, batch.batch_name)}
+                                  disabled={actionLoading[batch.batch_id] === 'rejecting'}
+                                  className="inline-flex items-center px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-all duration-200 disabled:opacity-50 shadow-sm"
+                                >
+                                  {actionLoading[batch.batch_id] === 'rejecting' ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 mr-1 border border-white border-t-transparent"></div>
+                                      Rejecting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                      Reject
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Edit Button - If authorized */}
+                              {canEdit() && (
+                                <button
+                                  onClick={() => setEditingBatch(batch)}
+                                  className="inline-flex items-center px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-all duration-200 shadow-sm"
+                                >
+                                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Edit
+                                </button>
+                              )}
+
+                              {/* Delete Button - Only for Admin */}
+                              {canDelete() && (
+                                <button
+                                  onClick={() => handleDeleteBatch(batch.batch_id)}
+                                  disabled={actionLoading[batch.batch_id] === 'deleting'}
+                                  className="inline-flex items-center px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-all duration-200 disabled:opacity-50 shadow-sm"
+                                >
+                                  {actionLoading[batch.batch_id] === 'deleting' ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 mr-1 border border-white border-t-transparent"></div>
+                                      Deleting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                      Delete
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination - BERRY Style */}
+                {tabBatches.length > itemsPerPage && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between px-4 sm:px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
+                    <div className="text-xs sm:text-sm text-gray-500 mb-4 sm:mb-0">
+                      Showing <span className="font-bold text-gray-800">{startIndex + 1}</span> to{' '}
+                      <span className="font-bold text-gray-800">{Math.min(startIndex + itemsPerPage, tabBatches.length)}</span> of{' '}
+                      <span className="font-bold text-gray-800">{tabBatches.length}</span> batches
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className={`p-2 rounded-lg transition-all ${currentPage === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-100'}`}
+                        title="Previous Page"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                      </button>
+
+                      <div className="flex items-center px-1.5 py-1 bg-white border border-gray-200 rounded-xl space-x-1 shadow-sm">
+                        {getPageNumbers().map(page => (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`min-w-[32px] h-8 rounded-lg text-xs font-bold transition-all ${
+                              currentPage === page ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className={`p-2 rounded-lg transition-all ${currentPage === totalPages ? 'text-gray-300 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-100'}`}
+                        title="Next Page"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Empty State - BERRY Style */
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-12 text-center animate-fade-in">
+                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                  <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">No batches found</h3>
+                <p className="text-gray-500 font-medium max-w-sm mx-auto">
+                  We couldn't find any batches in the <span className="text-blue-600 font-bold capitalize">{activeTab}</span> category.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -917,6 +1104,13 @@ const BatchApprovalPage = () => {
           batchName={enrolledStudentsModal.batchName}
         />
       )}
+      <StartBatchModal
+        isOpen={startBatchModal.isOpen}
+        onClose={() => setStartBatchModal({ isOpen: false, batchId: null, batchName: '' })}
+        onConfirm={handleStartBatchConfirm}
+        batchName={startBatchModal.batchName}
+        isLoading={startingBatch === startBatchModal.batchId}
+      />
     </div>
   );
 };

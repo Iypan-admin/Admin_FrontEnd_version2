@@ -54,26 +54,15 @@ function TeacherPage() {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    // If it has spaces, it's a full name
-    return name.trim().includes(' ');
-  };
-  
   // Get display name - ONLY show full name, never username
   const getDisplayName = () => {
-    // Priority 1: Token full_name (always use this if available and it's a full name)
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
-    // Priority 2: tutorInfo.full_name only if it's a proper full name (has spaces)
-    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '' && isFullName(tutorInfo.full_name)) {
-      return tutorInfo.full_name;
-    }
-    // Priority 3: Token full_name even if it doesn't have spaces (better than username)
+    // Priority 1: Token full_name
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
+    }
+    // Priority 2: tutorInfo.full_name
+    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '') {
+      return tutorInfo.full_name;
     }
     // Fallback
     return "Teacher";
@@ -327,7 +316,7 @@ function TeacherPage() {
                           {/* Account Settings */}
                           <button
                             onClick={() => {
-                              navigate('/teacher/tutor-info');
+                              navigate('/teacher/account-settings');
                               setIsProfileDropdownOpen(false);
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"

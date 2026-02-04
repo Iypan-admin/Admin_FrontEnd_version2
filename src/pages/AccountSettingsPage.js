@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import AcademicNotificationBell from '../components/AcademicNotificationBell';
-import { changePassword, getCurrentUserProfile, updateProfile, uploadProfilePicture } from '../services/Api';
+import ManagerNotificationBell from '../components/ManagerNotificationBell';
+import AdminNotificationBell from '../components/AdminNotificationBell';
+import StateNotificationBell from '../components/StateNotificationBell';
+import CenterNotificationBell from '../components/CenterNotificationBell';
+import { changePassword, getCurrentUserProfile, updateProfile, uploadProfilePicture, uploadSignature } from '../services/Api';
+
 
 const AccountSettingsPage = () => {
   const navigate = useNavigate();
@@ -25,6 +30,13 @@ const AccountSettingsPage = () => {
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  
+  // Signature states
+  const [signature, setSignature] = useState(null);
+  const [signatureUrl, setSignatureUrl] = useState(null);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [signatureError, setSignatureError] = useState('');
+  const [signatureSuccess, setSignatureSuccess] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sidebarCollapsed');
@@ -41,19 +53,31 @@ const AccountSettingsPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
-    return "Academic Coordinator";
+    // Get role from token
+    const role = decodedToken?.role || null;
+    if (role === 'manager') {
+      return "Manager";
+    } else if (role === 'academic') {
+      return "Academic Coordinator";
+    } else if (role === 'admin') {
+      return "Administrator";
+    } else if (role === 'state') {
+      return "State Admin";
+    } else if (role === 'center') {
+      return "Center Admin";
+    } else if (role === 'resource_manager') {
+      return "Resource Manager";
+    } else if (role === 'teacher') {
+      return "Teacher";
+    } else if (role === 'cardadmin') {
+      return "Card Admin";
+    }
+    return "User";
+
   };
 
   useEffect(() => {
@@ -102,6 +126,7 @@ const AccountSettingsPage = () => {
         if (response.success && response.data) {
           setFullName(response.data.full_name || '');
           setProfilePictureUrl(response.data.profile_picture || null);
+          setSignatureUrl(response.data.signature || null);
         }
       } catch (err) {
         console.error('Failed to fetch profile:', err);
@@ -153,6 +178,53 @@ const AccountSettingsPage = () => {
     }
   };
 
+  const handleSignatureChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setSignatureError('File size must be less than 5MB');
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        setSignatureError('Please select an image file');
+        return;
+      }
+      setSignature(file);
+      setSignatureError('');
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSignatureUrl(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadSignature = async () => {
+    if (!signature) return;
+
+    setUploadingSignature(true);
+    setSignatureError('');
+
+    try {
+      const url = await uploadSignature(signature);
+      setSignatureUrl(url);
+      setSignature(null);
+      setSignatureSuccess(true);
+      setTimeout(() => setSignatureSuccess(false), 3000);
+      
+      // Refresh profile data to get updated signature
+      const response = await getCurrentUserProfile();
+      if (response.success && response.data) {
+        setSignatureUrl(response.data.signature || null);
+      }
+    } catch (err) {
+      setSignatureError(err.message || 'Failed to upload signature');
+    } finally {
+      setUploadingSignature(false);
+    }
+  };
+
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     setProfileError('');
@@ -169,6 +241,15 @@ const AccountSettingsPage = () => {
       await updateProfile(fullName.trim());
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
+      // Dispatch event to notify other components about profile update
+      window.dispatchEvent(new CustomEvent('profileUpdated'));
+      // Refresh profile data
+      const response = await getCurrentUserProfile();
+      if (response.success && response.data) {
+        setFullName(response.data.full_name || '');
+        setProfilePictureUrl(response.data.profile_picture || null);
+        setSignatureUrl(response.data.signature || null);
+      }
     } catch (err) {
       setProfileError(err.message || 'Failed to update profile');
     } finally {
@@ -246,7 +327,12 @@ const AccountSettingsPage = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-2 sm:space-x-4">
-                <AcademicNotificationBell />
+                {decodedToken?.role === 'manager' && <ManagerNotificationBell />}
+                {decodedToken?.role === 'admin' && <AdminNotificationBell />}
+                {decodedToken?.role === 'academic' && <AcademicNotificationBell />}
+                {decodedToken?.role === 'state' && <StateNotificationBell />}
+                {decodedToken?.role === 'center' && <CenterNotificationBell />}
+
                 <div className="relative">
                   <button
                     onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
@@ -268,15 +354,37 @@ const AccountSettingsPage = () => {
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)}></div>
                       <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
-                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
                           <h3 className="font-bold text-gray-800 text-base">Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}</h3>
-                          <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                          <p className="text-sm text-gray-500 mt-1 capitalize">
+                            {decodedToken?.role || 'Academic Coordinator'}
+                          </p>
                         </div>
                         <div className="py-2">
                           <button
                             onClick={() => {
                               setIsProfileDropdownOpen(false);
-                              navigate('/academic-coordinator/settings');
+                              const role = decodedToken?.role || null;
+                              if (role === 'manager') {
+                                navigate('/manager/account-settings');
+                              } else if (role === 'admin') {
+                                navigate('/admin/account-settings');
+                              } else if (role === 'academic') {
+                                navigate('/academic-coordinator/settings');
+                              } else if (role === 'state') {
+                                navigate('/state/account-settings');
+                              } else if (role === 'center') {
+                                navigate('/center-admin/account-settings');
+                              } else if (role === 'financial') {
+                                navigate('/finance/account-settings');
+                              } else if (role === 'resource_manager') {
+                                navigate('/resource-manager/account-settings');
+                              } else if (role === 'teacher') {
+                                navigate('/teacher/account-settings');
+                              } else if (role === 'cardadmin') {
+                                navigate('/card-admin/account-settings');
+                              }
+
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
                           >
@@ -289,7 +397,7 @@ const AccountSettingsPage = () => {
                           <button
                             onClick={() => {
                               localStorage.removeItem("token");
-                              window.location.href = "/login";
+                              navigate("/");
                               setIsProfileDropdownOpen(false);
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
@@ -402,6 +510,103 @@ const AccountSettingsPage = () => {
                   )}
 
                   <p className="mt-2 text-xs text-gray-500">JPG, PNG or GIF (Max 5MB)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Signature Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #8b5cf6, #7c3aed)' }}>
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Digital Signature</h2>
+                  <p className="text-sm text-gray-500 mt-1">Upload your digital signature for official documents</p>
+                </div>
+              </div>
+
+              {signatureError && (
+                <div className="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 text-sm rounded mb-4">
+                  {signatureError}
+                </div>
+              )}
+
+              {signatureSuccess && (
+                <div className="p-4 bg-green-50 border-l-4 border-green-400 text-green-700 text-sm rounded mb-4">
+                  Signature uploaded successfully!
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-6">
+                {/* Signature Display */}
+                <div className="flex-shrink-0">
+                  {signatureUrl ? (
+                    <img
+                      src={signatureUrl}
+                      alt="Signature"
+                      className="w-48 h-24 object-contain border-2 border-gray-200 rounded-lg shadow-lg bg-white"
+                    />
+                  ) : (
+                    <div className="w-48 h-24 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                      <div className="text-center">
+                        <svg className="w-8 h-8 text-gray-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        <span className="text-xs text-gray-500">No signature</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Section */}
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    id="signature-input"
+                    accept="image/*"
+                    onChange={handleSignatureChange}
+                    disabled={uploadingSignature}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="signature-input"
+                    className={`inline-flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${
+                      uploadingSignature ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    style={{ backgroundColor: uploadingSignature ? '#9ca3af' : '#8b5cf6', color: 'white' }}
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    {uploadingSignature ? 'Uploading...' : signature ? 'Change Signature' : 'Upload Signature'}
+                  </label>
+
+                  {signature && !uploadingSignature && (
+                    <button
+                      onClick={handleUploadSignature}
+                      className="ml-3 inline-flex items-center px-4 py-2.5 text-sm font-medium text-white rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
+                      style={{ backgroundColor: '#10b981' }}
+                      onMouseEnter={(e) => e.target.style.backgroundColor = '#059669'}
+                      onMouseLeave={(e) => e.target.style.backgroundColor = '#10b981'}
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Save Signature
+                    </button>
+                  )}
+
+                  {uploadingSignature && (
+                    <div className="mt-3 flex items-center space-x-2">
+                      <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm text-gray-600">Uploading...</span>
+                    </div>
+                  )}
+
+                  <p className="mt-2 text-xs text-gray-500">JPG, PNG, GIF or any image format (Max 5MB). Background will be removed and converted to transparent PNG for certificate use</p>
                 </div>
               </div>
             </div>

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Navbar from "../components/Navbar";
+import { Users, Plus, X, UploadCloud, Mail, Phone, Tag, Globe, FileText } from "lucide-react";
+import CenterHeader from "../components/CenterHeader";
 import { getAllLeads, createLead, updateLeadStatus, getLeadDemoDetails, getDemoBatches, uploadLeadsCSV } from "../services/Api";
 
 const CentersLeadsPage = () => {
@@ -320,33 +322,35 @@ const CentersLeadsPage = () => {
     return (
         <div className="h-screen bg-gray-100 flex flex-col lg:flex-row overflow-hidden">
             <Navbar />
-            <div className="flex-1 lg:ml-64 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="flex-1 lg:ml-64 overflow-y-auto">
+            <CenterHeader 
+                title="Center Leads" 
+                subtitle={`Total Leads: ${leads.length}`} 
+                icon={Users}
+            />
+            
+            <div className="p-4 sm:p-6 lg:p-8">
                 <div className="max-w-full lg:max-w-7xl mx-auto">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
-                        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
-                            Center Leads
-                        </h1>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
-                                Total Leads: {leads.length}
-                            </span>
-                            <button
-                                onClick={() => setShowModal(true)}
-                                className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors"
-                            >
-                                + Add Lead
-                            </button>
-                            <button
-                                onClick={() => setShowCSVModal(true)}
-                                className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700 transition-colors flex items-center gap-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                </svg>
-                                Upload CSV
-                            </button>
-                        </div>
+                    {/* Actions Header */}
+                    <div className="flex flex-col sm:flex-row sm:justify-end items-center gap-3 mb-6">
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="w-full sm:w-auto bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all shadow-md flex items-center justify-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add Lead
+                        </button>
+                        <button
+                            onClick={() => setShowCSVModal(true)}
+                            className="w-full sm:w-auto bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition-all shadow-md flex items-center justify-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Upload CSV
+                        </button>
                     </div>
 
                     
@@ -805,264 +809,356 @@ const CentersLeadsPage = () => {
                 </div>
             )}
 
-            {/* ✅ Add Lead Modal */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50 px-4">
-                    <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-semibold mb-6 text-center">
-                            Add New Lead
-                        </h2>
-                        <form onSubmit={handleFormSubmit} className="space-y-4">
-                            <input
-                                type="text"
-                                required
-                                placeholder="Name"
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.name}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, name: e.target.value })
-                                }
-                            />
-                            <input
-                                type="email"
-                                required
-                                placeholder="Email"
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.email}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, email: e.target.value })
-                                }
-                            />
-                            <input
-                                type="text"
-                                required
-                                placeholder="Phone"
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.phone}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, phone: e.target.value })
-                                }
-                            />
-
-                            {/* ✅ Language dropdown with "Choose your language" */}
-                            <select
-                                required
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.course}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, course: e.target.value })
-                                }
+            {/* ✅ Add Lead Side Drawer - BERRY Style */}
+            <div 
+                className={`fixed inset-0 z-50 overflow-y-auto transition-opacity duration-300 ${
+                    showModal ? 'opacity-100 visible' : 'opacity-0 invisible'
+                }`}
+            >
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+                    onClick={() => setShowModal(false)}
+                ></div>
+                
+                {/* Panel */}
+                <div 
+                    className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[28rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out flex flex-col ${
+                        showModal ? 'translate-x-0' : 'translate-x-full'
+                    }`}
+                >
+                    {/* Sticky Header */}
+                    <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4 flex-shrink-0">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                                    <Plus className="w-6 h-6 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-800">Add New Lead</h2>
+                            </div>
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <option value="">Choose your language</option>
-                                <option value="French">French</option>
-                                <option value="German">German</option>
-                                <option value="Japanese">Japanese</option>
-                            </select>
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Drawer Body */}
+                    <div className="p-6 flex-1 overflow-y-auto">
+                        <form id="add-lead-form" onSubmit={handleFormSubmit} className="space-y-5">
+                            {/* Name */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Users className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Enter lead name"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    />
+                                </div>
+                            </div>
 
-                            {/* ✅ Lead Source dropdown with "Choose lead source" */}
-                            <select
-                                required
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.source}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, source: e.target.value })
-                                }
-                            >
-                                <option value="">Choose lead source</option>
-                                <option value="Facebook">Facebook</option>
-                                <option value="Website">Website</option>
-                                <option value="Google">Google</option>
-                                <option value="Justdial">Justdial</option>
-                                <option value="Associate Reference">
-                                    Associate Reference
-                                </option>
-                                <option value="Student Reference">Student Reference</option>
-                                <option value="Walk-in">Walk-in</option>
-                                <option value="ISML Leads">ISML Leads</option>
-                            </select>
+                            {/* Email */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Mail className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="email"
+                                        required
+                                        placeholder="Enter email address"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                        value={formData.email}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                    />
+                                </div>
+                            </div>
 
-                            <textarea
-                                rows={3}
-                                placeholder="Remarks"
-                                className="w-full border px-3 py-2 rounded"
-                                value={formData.remark}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, remark: e.target.value })
-                                }
-                            />
+                            {/* Phone */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Phone className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="tel"
+                                        required
+                                        placeholder="Enter phone number"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                        value={formData.phone}
+                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                    />
+                                </div>
+                            </div>
 
-                            <div className="flex flex-col sm:flex-row justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 bg-gray-200 rounded"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded"
-                                >
-                                    Submit
-                                </button>
+                            {/* Language */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Language Course</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Globe className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <select
+                                        required
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 appearance-none"
+                                        value={formData.course}
+                                        onChange={(e) => setFormData({ ...formData, course: e.target.value })}
+                                    >
+                                        <option value="">Choose language</option>
+                                        <option value="French">French</option>
+                                        <option value="German">German</option>
+                                        <option value="Japanese">Japanese</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Lead Source */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Lead Source</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Tag className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <select
+                                        required
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 appearance-none"
+                                        value={formData.source}
+                                        onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                                    >
+                                        <option value="">Choose source</option>
+                                        <option value="Facebook">Facebook</option>
+                                        <option value="Website">Website</option>
+                                        <option value="Google">Google</option>
+                                        <option value="Justdial">Justdial</option>
+                                        <option value="Associate Reference">Associate Reference</option>
+                                        <option value="Student Reference">Student Reference</option>
+                                        <option value="Walk-in">Walk-in</option>
+                                        <option value="ISML Leads">ISML Leads</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Remarks */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Remarks</label>
+                                <div className="relative">
+                                    <div className="absolute top-3 left-3 pointer-events-none">
+                                        <FileText className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <textarea
+                                        rows={3}
+                                        placeholder="Add any additional notes..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                        value={formData.remark}
+                                        onChange={(e) => setFormData({ ...formData, remark: e.target.value })}
+                                    />
+                                </div>
                             </div>
                         </form>
                     </div>
-                </div>
-            )}
-
-            {/* ✅ CSV Upload Modal */}
-            {showCSVModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-                    <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] shadow-lg flex flex-col overflow-hidden">
-                        <div className="flex justify-between items-center px-6 py-4 border-b bg-gradient-to-r from-green-600 to-green-700">
-                            <div>
-                                <h2 className="text-xl font-bold text-white">Upload Leads CSV</h2>
-                                <p className="text-green-100 text-sm mt-1">Bulk upload leads from CSV file</p>
-                            </div>
+                    
+                    {/* Drawer Footer */}
+                    <div className="p-6 border-t border-gray-200 flex-shrink-0">
+                        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
                             <button
-                                onClick={() => {
-                                    setShowCSVModal(false);
-                                    setCsvUploadMessage("");
-                                    setCsvValidationErrors([]);
-                                    setCsvDuplicates([]);
-                                    setCsvValidRows(null);
-                                }}
-                                className="text-white hover:text-gray-200 text-2xl font-bold"
+                                type="button"
+                                onClick={() => setShowModal(false)}
+                                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition duration-200"
                             >
-                                ✕
+                                Cancel
                             </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-6">
-                            {/* CSV Format Instructions */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                                <h3 className="font-semibold text-blue-900 mb-2">📋 CSV Format Requirements</h3>
-                                <div className="text-sm text-blue-800 space-y-1">
-                                    <p><strong>Required columns:</strong> name, phone, course, source</p>
-                                    <p><strong>Optional columns:</strong> email, remark (or remarks)</p>
-                                    <p><strong>Valid courses:</strong> French, German, Japanese</p>
-                                    <p><strong>Valid sources:</strong> Facebook, Website, Google, Justdial, Associate Reference, Student Reference, Walk-in, ISML Leads</p>
-                                </div>
-                                <div className="mt-3 pt-3 border-t border-blue-200">
-                                    <p className="text-xs text-blue-700 font-medium">Example CSV:</p>
-                                    <code className="text-xs bg-white px-2 py-1 rounded block mt-1">
-                                        name,phone,email,course,source,remark<br/>
-                                        John Doe,9876543210,john@example.com,French,Facebook,Interested in beginner course
-                                    </code>
-                                </div>
-                            </div>
-
-                            {/* File Upload */}
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Select CSV File
-                                </label>
-                                <input
-                                    type="file"
-                                    accept=".csv"
-                                    onChange={handleCSVUpload}
-                                    disabled={csvUploadLoading}
-                                    className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 focus:border-green-500 focus:outline-none transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-                                <p className="text-xs text-gray-500 mt-2">Maximum file size: 5MB</p>
-                            </div>
-
-                            {/* Upload Message */}
-                            {csvUploadMessage && (
-                                <div
-                                    className={`mb-4 p-4 rounded-lg ${
-                                        csvUploadMessage.includes("✅")
-                                            ? "bg-green-50 border border-green-200 text-green-800"
-                                            : csvUploadMessage.includes("⚠️")
-                                            ? "bg-yellow-50 border border-yellow-200 text-yellow-800"
-                                            : "bg-red-50 border border-red-200 text-red-800"
-                                    }`}
-                                >
-                                    <div className="flex items-start gap-2">
-                                        <span className="text-xl">{csvUploadMessage.includes("✅") ? "✅" : csvUploadMessage.includes("⚠️") ? "⚠️" : "❌"}</span>
-                                        <div className="flex-1">
-                                            <p className="font-medium">{csvUploadMessage}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Loading Spinner */}
-                            {csvUploadLoading && (
-                                <div className="flex items-center justify-center py-8">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-green-200 border-t-green-600"></div>
-                                    <span className="ml-3 text-gray-600">Processing CSV...</span>
-                                </div>
-                            )}
-
-                            {/* Validation Errors */}
-                            {csvValidationErrors.length > 0 && (
-                                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
-                                    <h3 className="font-semibold text-red-900 mb-2">Validation Errors:</h3>
-                                    <ul className="list-disc list-inside text-sm text-red-800 space-y-1 max-h-40 overflow-y-auto">
-                                        {csvValidationErrors.map((error, idx) => (
-                                            <li key={idx}>{error}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-
-                            {/* Duplicates */}
-                            {csvDuplicates.length > 0 && (
-                                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                    <h3 className="font-semibold text-yellow-900 mb-2">Duplicate Entries:</h3>
-                                    <ul className="list-disc list-inside text-sm text-yellow-800 space-y-1 max-h-40 overflow-y-auto">
-                                        {csvDuplicates.map((dup, idx) => (
-                                            <li key={idx}>{dup}</li>
-                                        ))}
-                                    </ul>
-                                    <div className="mt-4 flex gap-3">
-                                        <button
-                                            onClick={handleSkipDuplicatesAndInsert}
-                                            disabled={csvUploadLoading}
-                                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Skip Duplicates & Insert ({csvValidRows?.length || 0} rows)
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Download Template Link */}
-                            <div className="mt-6 pt-4 border-t border-gray-200">
-                                <a
-                                    href="/leads-template.csv"
-                                    download
-                                    className="text-blue-600 hover:text-blue-800 text-sm underline flex items-center gap-2"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
-                                    Download CSV Template
-                                </a>
-                            </div>
-                        </div>
-
-                        <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
                             <button
-                                onClick={() => {
-                                    setShowCSVModal(false);
-                                    setCsvUploadMessage("");
-                                    setCsvValidationErrors([]);
-                                    setCsvDuplicates([]);
-                                    setCsvValidRows(null);
-                                }}
-                                className="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                                form="add-lead-form"
+                                type="submit"
+                                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white rounded-lg shadow-sm hover:shadow-md transition duration-200"
+                                style={{ backgroundColor: '#2196f3' }}
+                                onMouseEnter={(e) => e.target.style.backgroundColor='#1976d2'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor='#2196f3'}
                             >
-                                Close
+                                Submit Lead
                             </button>
                         </div>
                     </div>
                 </div>
-            )}
+            </div>
+
+            {/* ✅ CSV Upload Side Drawer - BERRY Style */}
+            <div 
+                className={`fixed inset-0 z-50 overflow-y-auto transition-opacity duration-300 ${
+                    showCSVModal ? 'opacity-100 visible' : 'opacity-0 invisible'
+                }`}
+            >
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+                    onClick={() => setShowCSVModal(false)}
+                ></div>
+                
+                {/* Panel */}
+                <div 
+                    className={`fixed right-0 top-0 h-full w-full sm:w-96 md:w-[32rem] bg-white shadow-2xl transform transition-transform duration-300 ease-out flex flex-col ${
+                        showCSVModal ? 'translate-x-0' : 'translate-x-full'
+                    }`}
+                >
+                    {/* Sticky Header */}
+                    <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4 flex-shrink-0">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #4caf50, #388e3c)' }}>
+                                    <UploadCloud className="w-6 h-6 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-800">Upload Leads CSV</h2>
+                            </div>
+                            <button
+                                onClick={() => setShowCSVModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Drawer Body */}
+                    <div className="p-6 flex-1 overflow-y-auto">
+                        <div className="space-y-6">
+                            {/* Format Guide */}
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
+                                <h3 className="font-bold text-emerald-900 flex items-center gap-2 mb-3">
+                                    <FileText className="w-4 h-4" />
+                                    CSV Format Requirements
+                                </h3>
+                                <ul className="space-y-2 text-sm text-emerald-800">
+                                    <li className="flex gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                                        <span><strong>Required Columns:</strong> name, phone, course, source</span>
+                                    </li>
+                                    <li className="flex gap-2 text-xs opacity-75 mt-2 italic bg-white/50 p-2 rounded">
+                                        Example: name,phone,course,source...
+                                    </li>
+                                </ul>
+                            </div>
+
+                            {/* Template Link - Moved above upload section */}
+                            <div className="flex flex-col items-center gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Need the format?</p>
+                                <a 
+                                    href="/leads-template.csv" 
+                                    download 
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-white border-2 border-blue-100 rounded-xl text-blue-700 font-bold text-sm hover:bg-blue-50 hover:border-blue-200 transition-all active:scale-95 shadow-sm w-full justify-center"
+                                >
+                                    <FileText className="w-5 h-5 text-blue-600" />
+                                    Download Starter Template
+                                </a>
+                            </div>
+
+                            {/* File Picker */}
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-700 uppercase tracking-wider">Select File</label>
+                                <label className="relative group cursor-pointer block">
+                                    <input 
+                                        type="file" 
+                                        accept=".csv" 
+                                        onChange={handleCSVUpload}
+                                        disabled={csvUploadLoading}
+                                        className="hidden" 
+                                    />
+                                    <div className="w-full py-10 px-6 border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 group-hover:bg-emerald-50 group-hover:border-emerald-500 transition-all text-center">
+                                        <UploadCloud className="w-10 h-10 text-gray-400 group-hover:text-emerald-500 mx-auto mb-3 transition-colors" />
+                                        <p className="text-sm font-bold text-gray-700">Click to Browse or Drag & Drop</p>
+                                        <p className="text-xs text-gray-500 mt-1">Maximum file size: 5MB (CSV only)</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {/* Status Messages */}
+                            {(csvUploadLoading || csvUploadMessage) && (
+                                <div className="space-y-4">
+                                    {csvUploadLoading && (
+                                        <div className="flex items-center justify-center p-6 bg-gray-50 rounded-xl">
+                                            <div className="animate-spin rounded-full h-6 w-6 border-2 border-emerald-500 border-t-transparent mr-3"></div>
+                                            <span className="text-sm font-bold text-gray-700">Processing file...</span>
+                                        </div>
+                                    )}
+
+                                    {csvUploadMessage && (
+                                        <div className={`p-4 rounded-xl border flex gap-3 ${
+                                            csvUploadMessage.includes("✅") ? "bg-green-50 border-green-200 text-green-800" :
+                                            csvUploadMessage.includes("⚠️") ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                                            "bg-red-50 border-red-200 text-red-800"
+                                        }`}>
+                                            <div className="shrink-0 pt-0.5">
+                                                {csvUploadMessage.includes("✅") ? <Users className="w-5 h-5" /> : 
+                                                 csvUploadMessage.includes("⚠️") ? <Users className="w-5 h-5" /> : 
+                                                 <Users className="w-5 h-5" />}
+                                            </div>
+                                            <p className="text-sm font-bold leading-snug">{csvUploadMessage}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Error Details */}
+                            {csvValidationErrors.length > 0 && (
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold text-red-700 flex items-center gap-2">
+                                        <X className="w-4 h-4" />
+                                        Validation Failures
+                                    </h4>
+                                    <div className="bg-red-50 rounded-xl p-3 max-h-40 overflow-y-auto border border-red-100">
+                                        {csvValidationErrors.map((err, i) => (
+                                            <p key={i} className="text-xs text-red-800 py-1 border-b border-red-100 last:border-0">• {err}</p>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Duplicates Handler */}
+                            {csvDuplicates.length > 0 && (
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-bold text-yellow-700">Existing Leads Identified</h4>
+                                    <div className="bg-yellow-50 rounded-xl p-3 max-h-40 overflow-y-auto border border-yellow-100">
+                                        {csvDuplicates.map((dup, i) => (
+                                            <p key={i} className="text-xs text-yellow-800 py-1 border-b border-yellow-100 last:border-0">• {dup}</p>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={handleSkipDuplicatesAndInsert}
+                                        disabled={csvUploadLoading}
+                                        className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50"
+                                    >
+                                        Skip Duplicates & Save {csvValidRows?.length || 0} Leads
+                                    </button>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                    
+                    {/* Drawer Footer */}
+                    <div className="p-6 border-t border-gray-200 flex-shrink-0">
+                        <button
+                            onClick={() => setShowCSVModal(false)}
+                            className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-200 transition"
+                        >
+                            Close Drawer
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
-    );
+    </div>
+);
 };
 
 export default CentersLeadsPage;

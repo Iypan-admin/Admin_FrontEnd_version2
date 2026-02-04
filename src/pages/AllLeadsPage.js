@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import AcademicNotificationBell from "../components/AcademicNotificationBell";
+import ManagerNotificationBell from "../components/ManagerNotificationBell";
 import { getOfflineCenters, getLeadsByCenter, getCurrentUserProfile } from "../services/Api";
 
 const AllLeadsPage = () => {
     const [centers, setCenters] = useState([]);
     const [selectedCenter, setSelectedCenter] = useState(null);
     const [centerLeads, setCenterLeads] = useState([]);
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [leadsLoading, setLeadsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -31,21 +34,15 @@ const AllLeadsPage = () => {
     const token = localStorage.getItem("token");
     const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
     const tokenFullName = decodedToken?.full_name || null;
-    
-    // Helper function to check if a name is a full name (has spaces) vs username
-    const isFullName = (name) => {
-        if (!name || name.trim() === '') return false;
-        return name.trim().includes(' ');
-    };
+    const userRole = decodedToken?.role || null;
     
     // Get display name
     const getDisplayName = () => {
-        if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-            return tokenFullName;
-        }
         if (tokenFullName && tokenFullName.trim() !== '') {
             return tokenFullName;
         }
+        if (userRole === 'admin') return "Administrator";
+        if (userRole === 'manager') return "Manager";
         return "Academic Coordinator";
     };
 
@@ -348,7 +345,8 @@ const AllLeadsPage = () => {
 
                                 {/* Right: Notifications, Profile */}
                                 <div className="flex items-center space-x-2 sm:space-x-4">
-                                    <AcademicNotificationBell />
+                                    {(userRole === 'manager' || userRole === 'admin') && <ManagerNotificationBell />}
+                                    {userRole === 'academic' && <AcademicNotificationBell />}
 
                                     {/* Profile Dropdown */}
                                     <div className="relative">
@@ -379,14 +377,21 @@ const AllLeadsPage = () => {
                                                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
                                                     <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
                                                         <h3 className="font-bold text-gray-800 text-base">
-                                                            Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}
+                                                            Welcome, {getDisplayName()?.split(' ')[0] || "User"}
                                                         </h3>
-                                                        <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                                                        <p className="text-sm text-gray-500 mt-1 capitalize">{userRole || "Academic Coordinator"}</p>
                                                     </div>
 
                                                     <div className="py-2">
                                                         <button
                                                             onClick={() => {
+                                                                const settingsPaths = {
+                                                                    'academic': '/academic-coordinator/settings',
+                                                                    'manager': '/manager/account-settings',
+                                                                    'admin': '/manager/account-settings'
+                                                                };
+                                                                const path = settingsPaths[userRole] || '/account-settings';
+                                                                navigate(path);
                                                                 setIsProfileDropdownOpen(false);
                                                             }}
                                                             className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
@@ -397,12 +402,12 @@ const AllLeadsPage = () => {
                                                             </svg>
                                                             <span className="text-sm text-gray-700">Account Settings</span>
                                                         </button>
-
+                                                        
                                                         <button
                                                             onClick={() => {
                                                                 localStorage.removeItem("token");
                                                                 setIsProfileDropdownOpen(false);
-                                                                window.location.href = "/login";
+                                                                navigate("/");
                                                             }}
                                                             className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
                                                         >
@@ -560,7 +565,8 @@ const AllLeadsPage = () => {
 
                             {/* Right: Notifications, Profile */}
                             <div className="flex items-center space-x-2 sm:space-x-4">
-                                <AcademicNotificationBell />
+                                {(userRole === 'manager' || userRole === 'admin') && <ManagerNotificationBell />}
+                                {userRole === 'academic' && <AcademicNotificationBell />}
 
                                 {/* Profile Dropdown */}
                                 <div className="relative">
@@ -591,14 +597,21 @@ const AllLeadsPage = () => {
                                             <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
                                                 <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
                                                     <h3 className="font-bold text-gray-800 text-base">
-                                                        Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}
+                                                        Welcome, {getDisplayName()?.split(' ')[0] || "User"}
                                                     </h3>
-                                                    <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                                                    <p className="text-sm text-gray-500 mt-1 capitalize">{userRole || "Academic Coordinator"}</p>
                                                 </div>
 
                                                 <div className="py-2">
                                                     <button
                                                         onClick={() => {
+                                                            const settingsPaths = {
+                                                                'academic': '/academic-coordinator/settings',
+                                                                'manager': '/manager/account-settings',
+                                                                'admin': '/manager/account-settings'
+                                                            };
+                                                            const path = settingsPaths[userRole] || '/account-settings';
+                                                            navigate(path);
                                                             setIsProfileDropdownOpen(false);
                                                         }}
                                                         className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
@@ -609,12 +622,12 @@ const AllLeadsPage = () => {
                                                         </svg>
                                                         <span className="text-sm text-gray-700">Account Settings</span>
                                                     </button>
-
+                                                    
                                                     <button
                                                         onClick={() => {
                                                             localStorage.removeItem("token");
                                                             setIsProfileDropdownOpen(false);
-                                                            window.location.href = "/login";
+                                                            navigate("/");
                                                         }}
                                                         className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
                                                     >

@@ -1,16 +1,63 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { ClipboardCheck } from 'lucide-react';
 import Navbar from "../components/Navbar";
-import { getBatchRequestsForState, approveBatchRequest, rejectBatchRequest } from "../services/Api";
+import { getBatchRequestsForState, approveBatchRequest, rejectBatchRequest, getCurrentUserProfile } from "../services/Api";
+
+import StateNotificationBell from "../components/StateNotificationBell";
+
 
 const StateBatchRequestsPage = () => {
+
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profileInfo, setProfileInfo] = useState(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+
+
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+
+
+  // Get current user's name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const userName = (decodedToken?.full_name && 
+                    decodedToken.full_name !== null && 
+                    decodedToken.full_name !== undefined && 
+                    String(decodedToken.full_name).trim() !== '') 
+    ? decodedToken.full_name 
+    : (decodedToken?.name || 'State Admin');
+
+
+  const getDisplayName = () => {
+    if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+      return profileInfo.full_name;
+    }
+    if (userName && userName.trim() !== '') {
+      return userName;
+    }
+    return "State Admin";
+  };
+
+
 
   // Filter requests
+
   const filteredRequests = requests.filter((request) => {
     const query = searchTerm.toLowerCase();
     const matchesSearch = 
@@ -53,7 +100,47 @@ const StateBatchRequestsPage = () => {
 
   useEffect(() => {
     fetchRequests();
+
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfileInfo(response.data);
+          setProfilePictureUrl(response.data.profile_picture || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+
+    return () => {
+      window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('profileUpdated', fetchProfileInfo);
+    };
   }, []);
+
+
 
   const handleApprove = async (requestId) => {
     if (!window.confirm("Are you sure you want to approve this batch request?")) {
@@ -125,43 +212,130 @@ const StateBatchRequestsPage = () => {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gray-50 flex relative">
       <Navbar />
-      <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-        <div className="p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-8">
-            {/* Enhanced Header - Center Admin Style */}
-            <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 rounded-2xl shadow-2xl p-8 text-white relative overflow-hidden">
-              <div className="absolute inset-0 bg-black opacity-10"></div>
-              <div className="relative z-10">
-                <div className="flex items-center space-x-6">
-                  <div className="p-4 bg-white bg-opacity-20 rounded-2xl backdrop-blur-sm">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2">
-                      Batch Requests
-                    </h1>
-                    <p className="text-blue-100 text-lg">
-                      Review and approve batch creation requests from Center Admins
-                    </p>
-                    <div className="flex items-center mt-2 space-x-4">
-                      <div className="flex items-center text-sm text-blue-200">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Last updated: {new Date().toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+
+
+
+        {/* Top Header Bar - BERRY Style */}
+        <nav className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-3 sm:py-4 min-h-[4rem]">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                {/* Mobile Toggle */}
+                <button 
+                  onClick={() => {
+                    const newState = !isMobileMenuOpen;
+                    setIsMobileMenuOpen(newState);
+                    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+                  }}
+                  className="lg:hidden p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all duration-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+                
+                <div
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shadow-md flex-shrink-0"
+                  style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}
+                >
+                  <ClipboardCheck className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                </div>
+                
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl md:text-2xl font-bold text-gray-800 truncate">Batch Requests</h1>
+                  <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 hidden sm:block truncate">Review and approve batch creation requests from Center Admins</p>
                 </div>
               </div>
-              {/* Decorative elements */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -translate-y-16 translate-x-16"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white opacity-5 rounded-full translate-y-12 -translate-x-12"></div>
+
+              {/* Right: Notifications & Profile */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <StateNotificationBell />
+                
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-md hover:ring-2 hover:ring-blue-300 transition-all"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base hover:bg-blue-700 transition-all shadow-md">
+                        {getDisplayName()?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      ></div>
+                      
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Welcome, {getDisplayName() || "User"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1 capitalize">State Admin</p>
+                        </div>
+
+
+                        <div className="py-2">
+                          <button
+                            onClick={() => {
+                              navigate('/state/account-settings');
+                              setIsProfileDropdownOpen(false);
+                            }}
+
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem("token");
+                              navigate("/login");
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm text-gray-700 font-medium">Logout</span>
+                          </button>
+                        </div>
+
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
+          </div>
+        </nav>
+
+
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+
+            {/* Enhanced Header - Center Admin Style */}
+
 
             {error && (
               <div className="p-6 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl shadow-lg">

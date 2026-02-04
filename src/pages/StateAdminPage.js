@@ -1,33 +1,97 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import CreateCenterRequestModal from "../components/CreateCenterRequestModal";
-import MiniCalendarWidget from "../components/MiniCalendarWidget";
-import CalendarNotificationBar from "../components/CalendarNotificationBar";
-import { getCentersForStateAdmin, getMyCenterRequests } from "../services/Api";
+
+
+
+import { getCentersForStateAdmin, getMyCenterRequests, getCurrentUserProfile } from "../services/Api";
+import StateNotificationBell from "../components/StateNotificationBell";
+
 
 function StateAdminPage() {
   const navigate = useNavigate();
-  const calendarRef = useRef(null);
+
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profileInfo, setProfileInfo] = useState(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
   const [stats, setStats] = useState({
     totalCenters: 0,
-    activeCenters: 0,
-    totalAdmins: 0,
-    pendingRequests: 0
+    totalRequests: 0,
+    pendingRequests: 0,
+    approvedRequests: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showRequestModal, setShowRequestModal] = useState(false);
+
+  // Get current user's name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const userName = (decodedToken?.full_name && 
+                    decodedToken.full_name !== null && 
+                    decodedToken.full_name !== undefined && 
+                    String(decodedToken.full_name).trim() !== '') 
+    ? decodedToken.full_name 
+    : (decodedToken?.name || 'State Admin');
+
+
+  const getDisplayName = () => {
+    if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+      return profileInfo.full_name;
+    }
+    if (userName && userName.trim() !== '') {
+      return userName;
+    }
+    return "State Admin";
+  };
+
+
 
   // Scroll to calendar function
-  const scrollToCalendar = () => {
-    if (calendarRef.current) {
-      calendarRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'start' 
-      });
-    }
-  };
+
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle(); // Initial check
+    
+    return () => {
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -41,22 +105,11 @@ function StateAdminPage() {
           return;
         }
 
-        // Decode token to get user info
-        let userInfo = null;
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          userInfo = payload;
-          console.log("Current user info:", userInfo);
-        } catch (e) {
-          console.error("Error decoding token:", e);
-        }
-
-        const [, requestsResponse] = await Promise.all([
+        const [centersResponse, requestsResponse] = await Promise.all([
           getCentersForStateAdmin(token),
           getMyCenterRequests(token)
         ]);
         
-        const centersResponse = await getCentersForStateAdmin(token);
         const centers = centersResponse.data || [];
 
         setStats({
@@ -85,7 +138,32 @@ function StateAdminPage() {
     };
 
     fetchStats();
+
+    // Fetch profile info
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfileInfo(response.data);
+          setProfilePictureUrl(response.data.profile_picture || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+    return () => {
+      window.removeEventListener('profileUpdated', fetchProfileInfo);
+    };
   }, []);
+
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+  };
 
   const handleRequestSuccess = () => {
     // Refresh data after successful request creation
@@ -113,45 +191,129 @@ function StateAdminPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gray-50 flex relative">
       <Navbar />
-      <CalendarNotificationBar onScrollToCalendar={scrollToCalendar} />
-      <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-        <div className="p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-8">
-            {/* Enhanced Welcome Section - Center Admin Style */}
-            <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 rounded-2xl shadow-2xl p-8 text-white relative overflow-hidden">
-              <div className="absolute inset-0 bg-black opacity-10"></div>
-              <div className="relative z-10">
-                <div className="flex items-center space-x-6">
-                  <div className="p-4 bg-white bg-opacity-20 rounded-2xl backdrop-blur-sm">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      
+      {/* Main Content Area - BERRY Style */}
+
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+        {/* Top Header Bar - BERRY Style */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between">
+              {/* Left: Hamburger Menu & Welcome Text */}
+              <div className="flex items-center space-x-3 sm:space-x-4">
+                {/* Hamburger Menu Toggle */}
+                <button 
+                  onClick={toggleMobileMenu}
+                  className="lg:hidden p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+                  title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                >
+                  {isMobileMenuOpen ? (
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2">
-                      State Admin Dashboard
-                    </h1>
-                    <p className="text-blue-100 text-lg">
-                      Manage centers and requests for your state
-                    </p>
-                    <div className="flex items-center mt-2 space-x-4">
-                      <div className="flex items-center text-sm text-blue-200">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Last updated: {new Date().toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
+                  ) : (
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
+                
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+                    Welcome back, {getDisplayName()}! 👋
+                  </h1>
+
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                    Manage your state operations efficiently
+                  </p>
                 </div>
+
               </div>
-              {/* Decorative elements */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -translate-y-16 translate-x-16"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white opacity-5 rounded-full translate-y-12 -translate-x-12"></div>
+
+              {/* Right: Notification & Profile Dropdown */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <StateNotificationBell />
+                  {/* Profile Dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                      className="flex items-center focus:outline-none"
+                    >
+                      {profilePictureUrl ? (
+                        <img
+                          src={profilePictureUrl}
+                          alt="Profile"
+                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-md hover:ring-2 hover:ring-blue-300 transition-all"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base hover:bg-blue-700 transition-all shadow-md">
+                          {getDisplayName()?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </button>
+
+                    {isProfileDropdownOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                        ></div>
+                        
+                        <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                          <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                            <h3 className="font-bold text-gray-800 text-base">
+                              Welcome, {getDisplayName() || "User"}
+                            </h3>
+                            <p className="text-sm text-gray-500 mt-1 capitalize">State Admin</p>
+                          </div>
+
+
+                          <div className="py-2">
+                            <button
+                              onClick={() => {
+                                navigate('/state/account-settings');
+                                setIsProfileDropdownOpen(false);
+                              }}
+
+                              className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                            >
+                              <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              <span className="text-sm text-gray-700">Account Settings</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                localStorage.removeItem("token");
+                                navigate("/login");
+                                setIsProfileDropdownOpen(false);
+                              }}
+                              className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                            >
+                              <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                              </svg>
+                              <span className="text-sm text-gray-700 font-medium">Logout</span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+
+              </div>
             </div>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+
 
             {error && (
               <div className="p-6 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl shadow-lg">
@@ -190,65 +352,67 @@ function StateAdminPage() {
               </div>
             )}
 
-            {/* Enhanced Statistics Cards */}
+            {/* Enhanced Statistics Cards - BERRY Style */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
                 {
                   title: "Total Centers",
                   value: loading ? "..." : stats.totalCenters,
                   icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
-                  gradient: "from-blue-400 to-indigo-500",
-                  bgGradient: "from-blue-50 to-indigo-50",
-                  textColor: "text-blue-600"
+                  gradient: "from-blue-500 to-blue-600",
+                  shadow: "shadow-blue-200"
                 },
                 {
                   title: "Active Centers",
                   value: loading ? "..." : stats.activeCenters,
                   icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-                  gradient: "from-green-400 to-emerald-500",
-                  bgGradient: "from-green-50 to-emerald-50",
-                  textColor: "text-green-600"
+                  gradient: "from-emerald-500 to-emerald-600",
+                  shadow: "shadow-emerald-200"
                 },
                 {
                   title: "Center Admins",
                   value: loading ? "..." : stats.totalAdmins,
                   icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z",
-                  gradient: "from-purple-400 to-pink-500",
-                  bgGradient: "from-purple-50 to-pink-50",
-                  textColor: "text-purple-600"
+                  gradient: "from-purple-500 to-purple-600",
+                  shadow: "shadow-purple-200"
                 },
                 {
                   title: "Pending Requests",
                   value: loading ? "..." : stats.pendingRequests,
                   icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
-                  gradient: "from-yellow-400 to-orange-500",
-                  bgGradient: "from-yellow-50 to-orange-50",
-                  textColor: "text-yellow-600"
+                  gradient: "from-amber-500 to-amber-600",
+                  shadow: "shadow-amber-200"
                 }
               ].map((stat, index) => (
                 <div
                   key={index}
-                  className="group bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+                  className={`relative overflow-hidden rounded-2xl p-6 shadow-lg ${stat.shadow} bg-gradient-to-br ${stat.gradient} transform hover:scale-105 transition-all duration-300 group`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className={`p-4 bg-gradient-to-br ${stat.gradient} rounded-2xl shadow-lg`}>
-                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={stat.icon} />
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform duration-500"></div>
+                  
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="bg-white/20 backdrop-blur-md rounded-xl p-2.5 shadow-sm border border-white/30">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={stat.icon} />
                         </svg>
                       </div>
-                      <div>
-                        <p className={`text-sm font-semibold ${stat.textColor} uppercase tracking-wide`}>{stat.title}</p>
-                        <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-                      </div>
+                      {stat.title === 'Pending Requests' && stats.pendingRequests > 0 && (
+                        <div className="flex h-3 w-3 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <div className={`w-3 h-3 bg-gradient-to-r ${stat.gradient} rounded-full ${stat.title === 'Pending Requests' ? 'animate-pulse' : ''}`}></div>
+                    <div>
+                      <p className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1">{stat.title}</p>
+                      <h3 className="text-3xl font-black text-white">{stat.value}</h3>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+
 
             {/* Enhanced Quick Actions */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
@@ -314,19 +478,7 @@ function StateAdminPage() {
               </div>
             </div>
 
-            {/* Event Calendar Widget */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Event Calendar</h2>
-                <div className="flex items-center space-x-2 text-sm text-gray-500">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>View upcoming events</span>
-                </div>
-              </div>
-              <MiniCalendarWidget scrollRef={calendarRef} />
-            </div>
+
           </div>
         </div>
       </div>

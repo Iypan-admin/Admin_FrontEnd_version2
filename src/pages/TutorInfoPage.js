@@ -60,20 +60,12 @@ function TutorInfoPage() {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
-    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '' && isFullName(tutorInfo.full_name)) {
-      return tutorInfo.full_name;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
+    }
+    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '') {
+      return tutorInfo.full_name;
     }
     return "Teacher";
   };

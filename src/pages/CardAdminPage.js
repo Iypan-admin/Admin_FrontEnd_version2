@@ -1,20 +1,30 @@
 // src/pages/CardAdminPage.js
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { useNavigate } from "react-router-dom";
-import MiniCalendarWidget from "../components/MiniCalendarWidget";
-import CalendarNotificationBar from "../components/CalendarNotificationBar";
-import { getCardStats, getRecentPendingCards } from "../services/Api";
+import CardAdminNotificationBell from "../components/CardAdminNotificationBell";
+import { getCardStats, getRecentPendingCards, getCurrentUserProfile } from "../services/Api";
 
 const CardAdminPage = () => {
     const navigate = useNavigate();
-    const calendarRef = useRef(null);
 
     const [pendingCount, setPendingCount] = useState(0);
     const [activeCount, setActiveCount] = useState(0);
     const [expiredCount, setExpiredCount] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
     const [recentCards, setRecentCards] = useState([]);
+    const [sidebarWidth, setSidebarWidth] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('sidebarCollapsed');
+            return saved === 'true' ? '6rem' : '16rem';
+        }
+        return '16rem';
+    });
+    const [isMobile, setIsMobile] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+    const [profileInfo, setProfileInfo] = useState(null);
+    const [profilePictureUrl, setProfilePictureUrl] = useState(null);
 
     // Get current user's name from token
     const token = localStorage.getItem("token");
@@ -26,15 +36,74 @@ const CardAdminPage = () => {
       ? decodedToken.full_name 
       : (decodedToken?.name || 'Card Admin');
 
-    // Scroll to calendar function
-    const scrollToCalendar = () => {
-        if (calendarRef.current) {
-            calendarRef.current.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'start' 
-            });
+    const getDisplayName = () => {
+        if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+            return profileInfo.full_name;
         }
+        return userName;
     };
+
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 1024);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    // Sync mobile menu state with Navbar
+    useEffect(() => {
+        const handleMobileMenuStateChange = (event) => {
+            setIsMobileMenuOpen(event.detail);
+        };
+        window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+        return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    }, []);
+
+    // Toggle mobile menu
+    const toggleMobileMenu = () => {
+        const newState = !isMobileMenuOpen;
+        setIsMobileMenuOpen(newState);
+        window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+    };
+
+    // Listen for sidebar toggle
+    useEffect(() => {
+        const handleSidebarToggle = () => {
+            const saved = localStorage.getItem('sidebarCollapsed');
+            setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+        };
+        
+        window.addEventListener('sidebarToggle', handleSidebarToggle);
+        handleSidebarToggle();
+        
+        return () => {
+            window.removeEventListener('sidebarToggle', handleSidebarToggle);
+        };
+    }, []);
+
+    // Fetch profile info
+    useEffect(() => {
+        const fetchProfileInfo = async () => {
+            try {
+                const response = await getCurrentUserProfile();
+                if (response.success && response.data) {
+                    setProfileInfo(response.data);
+                    setProfilePictureUrl(response.data.profile_picture || null);
+                }
+            } catch (err) {
+                console.error('Failed to fetch profile:', err);
+            }
+        };
+        fetchProfileInfo();
+
+        window.addEventListener('profileUpdated', fetchProfileInfo);
+        return () => {
+            window.removeEventListener('profileUpdated', fetchProfileInfo);
+        };
+    }, []);
 
     // Helper function to get color classes
     const getColorClasses = (color) => {
@@ -119,13 +188,112 @@ const CardAdminPage = () => {
     }, []);
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
+      <div className="min-h-screen bg-gray-50 flex">
             <Navbar />
-            <CalendarNotificationBar onScrollToCalendar={scrollToCalendar} />
-        <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-          <div className="p-4 lg:p-8">
-            <div className="mt-16 lg:mt-0">
-              <div className="max-w-7xl mx-auto space-y-8">
+            
+            <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+                {/* Top Header Bar - BERRY Style */}
+                <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+                    <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+                        <div className="flex items-center justify-between">
+                            {/* Left: Hamburger Menu & Welcome Text */}
+                            <div className="flex items-center space-x-3 sm:space-x-4">
+                                <button 
+                                    onClick={toggleMobileMenu}
+                                    className="lg:hidden p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+                                    title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                                >
+                                    {isMobileMenuOpen ? (
+                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                                        </svg>
+                                    )}
+                                </button>
+                                
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+                                        Welcome back, {getDisplayName()}! 👋
+                                    </h1>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                        Card Administrator Dashboard
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Right: Profile Dropdown */}
+                            <div className="flex items-center space-x-2 sm:space-x-4">
+                                <CardAdminNotificationBell />
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                                        className="flex items-center focus:outline-none"
+                                    >
+                                        {profilePictureUrl ? (
+                                            <img
+                                                src={profilePictureUrl}
+                                                alt="Profile"
+                                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
+                                            />
+                                        ) : (
+                                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all shadow-md">
+                                                {getDisplayName()?.charAt(0).toUpperCase() || "C"}
+                                            </div>
+                                        )}
+                                    </button>
+
+                                    {isProfileDropdownOpen && (
+                                        <>
+                                            <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)}></div>
+                                            <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                                                <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                                                    <h3 className="font-bold text-gray-800 text-base">
+                                                        Welcome, {getDisplayName()?.split(' ')[0] || "Admin"}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-500 mt-1">Card Admin</p>
+                                                </div>
+                                                <div className="py-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            navigate('/card-admin/account-settings');
+                                                            setIsProfileDropdownOpen(false);
+                                                        }}
+                                                        className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                                                    >
+                                                        <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        </svg>
+                                                        <span className="text-sm text-gray-700">Account Settings</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            localStorage.removeItem("token");
+                                                            navigate("/login");
+                                                            setIsProfileDropdownOpen(false);
+                                                        }}
+                                                        className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                                                    >
+                                                        <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                                        </svg>
+                                                        <span className="text-sm text-gray-700">Logout</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+          <div className="p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto space-y-8">
                 {/* Professional Welcome Section - Modern Design */}
                 <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-2xl shadow-2xl overflow-hidden">
                   <div className="relative p-5 sm:p-6 lg:p-7">
@@ -483,31 +651,10 @@ const CardAdminPage = () => {
                             </div>
                   </div>
                 </div>
-
-                {/* Event Calendar Widget */}
-                <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
-                  <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-gray-200">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-800">Event Calendar</h3>
-                        <p className="text-sm text-gray-500">View upcoming events</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-6">
-                    <MiniCalendarWidget scrollRef={calendarRef} />
-                  </div>
-                </div>
-              </div>
-                    </div>
-                </div>
             </div>
         </div>
+    </div>
+</div>
     );
 };
 

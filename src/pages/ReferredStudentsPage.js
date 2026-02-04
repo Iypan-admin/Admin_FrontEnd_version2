@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { getReferredStudents, getCenterByAdminId } from '../services/Api';
+import CenterHeader from '../components/CenterHeader';
+import { UserCheck } from 'lucide-react';
 
 function ReferredStudentsPage() {
   const [referredStudents, setReferredStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedCenter, setSelectedCenter] = useState(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
 
   // Format date helper function
   const formatDate = (dateString) =>
@@ -47,6 +57,21 @@ function ReferredStudentsPage() {
     };
 
     loadCenter();
+
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
   }, []);
 
   // Load referred students
@@ -81,21 +106,23 @@ function ReferredStudentsPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex">
       <Navbar showCenterViewOptions={!!selectedCenter} selectedCenter={selectedCenter} />
-      <div className="flex-1 lg:ml-64">
-        <div className="p-2 sm:p-4 lg:p-8">
-          <div className="mt-16 lg:mt-0">
-            <div className="max-w-7xl mx-auto">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Referred Students</h1>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Students referred by {selectedCenter?.center_name || 'your center'}
-                  </p>
-                </div>
-                <div className="mt-2 sm:mt-0 text-sm text-gray-600 bg-blue-100 px-3 py-1 rounded-full">
-                  {referredStudents.length} {referredStudents.length === 1 ? 'Student' : 'Students'} Referred
-                </div>
+      <div 
+        className="flex-1 overflow-y-auto transition-all duration-300" 
+        style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}
+      >
+        <CenterHeader 
+          title="Referred Students" 
+          subtitle={selectedCenter ? `Students referred by ${selectedCenter.center_name}` : 'Referral tracking overview'} 
+          icon={UserCheck}
+        />
+
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div className="flex justify-end">
+              <div className="text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100 shadow-sm">
+                {referredStudents.length} {referredStudents.length === 1 ? 'Student' : 'Students'} Referred
               </div>
+            </div>
 
               {error && (
                 <div className="bg-red-100 text-red-700 p-4 rounded-lg mb-4">{error}</div>
@@ -198,7 +225,6 @@ function ReferredStudentsPage() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

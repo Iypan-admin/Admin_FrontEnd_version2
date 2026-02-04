@@ -327,3 +327,4 @@ const TutorInfoSlidePanel = ({ isOpen, onClose, userId, userName }) => {
 
 export default TutorInfoSlidePanel;
 
+

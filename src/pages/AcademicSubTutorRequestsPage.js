@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import AcademicNotificationBell from "../components/AcademicNotificationBell";
 import { listSubTutorRequests, approveSubTutorRequest, rejectSubTutorRequest, getCurrentUserProfile } from "../services/Api";
@@ -26,22 +26,14 @@ function AcademicSubTutorRequestsPage() {
   const [profilePictureUrl, setProfilePictureUrl] = useState(null);
   const [openActionMenu, setOpenActionMenu] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
-  const actionButtonRefs = useRef({});
 
   // Get current user's name from token
   const token = localStorage.getItem("token");
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
+  // Get display name - ONLY show full name, never username
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -501,7 +493,6 @@ function AcademicSubTutorRequestsPage() {
                                 <div className="relative">
                                   {/* 3-Dot Menu Button */}
                                   <button 
-                                    ref={el => actionButtonRefs.current[r.id] = el}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       const button = e.currentTarget;

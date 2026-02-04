@@ -1,12 +1,27 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
-import { uploadGiveawayCSV, getAllGiveaways, addGiveawayManual } from "../services/Api";
+import { uploadGiveawayCSV, getAllGiveaways, addGiveawayManual, getCurrentUserProfile } from "../services/Api";
+import CardAdminNotificationBell from "../components/CardAdminNotificationBell";
 
 const ActivateCardPage = () => {
+    const navigate = useNavigate();
     const [allData, setAllData] = useState([]);
     const [uploadMessage, setUploadMessage] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+    const [profileInfo, setProfileInfo] = useState(null);
+    const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [sidebarWidth, setSidebarWidth] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('sidebarCollapsed');
+            return saved === 'true' ? '6rem' : '16rem';
+        }
+        return '16rem';
+    });
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
     const [formData, setFormData] = useState({
         name: "",
         cardName: "",
@@ -48,6 +63,97 @@ const ActivateCardPage = () => {
     useEffect(() => {
         fetchData();
     }, []);
+
+    // Get current user's name from token
+    const token = localStorage.getItem("token");
+    const userName = token ? (() => {
+        try {
+            const decodedToken = JSON.parse(atob(token.split(".")[1]));
+            return (decodedToken?.full_name && 
+                              decodedToken.full_name !== null && 
+                              decodedToken.full_name !== undefined && 
+                              String(decodedToken.full_name).trim() !== '') 
+                ? decodedToken.full_name 
+                : (decodedToken?.name || 'Admin');
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            return 'Admin';
+        }
+    })() : 'Admin';
+
+    // Fetch user profile
+    const fetchUserProfile = async () => {
+        try {
+            const profile = await getCurrentUserProfile();
+            if (profile && profile.data) {
+                setProfileInfo(profile.data);
+                if (profile.data.profile_picture) {
+                    setProfilePictureUrl(profile.data.profile_picture);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching profile:', error);
+        }
+    };
+
+    // Profile update listener
+    useEffect(() => {
+        const handleProfileUpdate = () => {
+            fetchUserProfile();
+        };
+        window.addEventListener('profileUpdated', handleProfileUpdate);
+        return () => window.removeEventListener('profileUpdated', handleProfileUpdate);
+    }, []);
+
+    // Load data on component mount
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+        fetchUserProfile();
+    }, [navigate]);
+
+    // Mobile detection
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 1024);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Listen for sidebar toggle
+    useEffect(() => {
+        const handleSidebarToggle = () => {
+            const saved = localStorage.getItem('sidebarCollapsed');
+            setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+        };
+        
+        window.addEventListener('sidebarToggle', handleSidebarToggle);
+        handleSidebarToggle();
+        
+        return () => {
+            window.removeEventListener('sidebarToggle', handleSidebarToggle);
+        };
+    }, []);
+
+    // Sync mobile menu state with Navbar
+    useEffect(() => {
+        const handleMobileMenuStateChange = (event) => {
+            setIsMobileMenuOpen(event.detail);
+        };
+        window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+        return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    }, []);
+
+    // Toggle mobile menu
+    const toggleMobileMenu = () => {
+        const newState = !isMobileMenuOpen;
+        setIsMobileMenuOpen(newState);
+        window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+    };
 
     // ✅ CSV Upload
     const handleCSVUpload = async (e) => {
@@ -136,11 +242,102 @@ const ActivateCardPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
+        <div className="min-h-screen bg-slate-50 flex">
             <Navbar />
-            <div className="flex-1 lg:ml-64 h-screen overflow-y-auto">
-                <div className="p-4 lg:p-8">
-                    <div className="mt-16 lg:mt-0">
+            
+            <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+                {/* Berry Style Header */}
+                <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+                    <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+                        <div className="flex items-center justify-between">
+                            {/* Left: Hamburger Menu & Welcome Text */}
+                            <div className="flex items-center space-x-3 sm:space-x-4">
+                                <button 
+                                    onClick={toggleMobileMenu}
+                                    className="lg:hidden p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+                                    title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                                >
+                                    {isMobileMenuOpen ? (
+                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                                        </svg>
+                                    )}
+                                </button>
+                                
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+                                        Activate Cards
+                                    </h1>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                        Manage card activation and giveaway entries
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Right: Notification Bell & Profile Dropdown */}
+                            <div className="flex items-center space-x-2 sm:space-x-4">
+                                <CardAdminNotificationBell />
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                                        className="flex items-center focus:outline-none"
+                                    >
+                                        {profilePictureUrl ? (
+                                            <img
+                                                src={profilePictureUrl}
+                                                alt="Profile"
+                                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
+                                            />
+                                        ) : (
+                                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
+                                                {userName?.charAt(0)?.toUpperCase() || 'A'}
+                                            </div>
+                                        )}
+                                    </button>
+                                    
+                                    {/* Profile Dropdown */}
+                                    {showProfileDropdown && (
+                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                                            <div className="px-4 py-2 border-b border-gray-100">
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {profileInfo?.full_name || userName}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {profileInfo?.email || 'admin@example.com'}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    navigate('/account-settings');
+                                                    setShowProfileDropdown(false);
+                                                }}
+                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                            >
+                                                Account Settings
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    localStorage.removeItem('token');
+                                                    navigate('/login');
+                                                }}
+                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                            >
+                                                Logout
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="p-4 sm:p-6 lg:p-8">
                         <div className="max-w-7xl mx-auto space-y-8">
                             {/* Enhanced Welcome Section */}
                             <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-2xl shadow-2xl overflow-hidden">
@@ -580,8 +777,8 @@ const ActivateCardPage = () => {
                     </div>
                 </div>
             </div>
-        </div>
     );
 };
 
 export default ActivateCardPage;
+

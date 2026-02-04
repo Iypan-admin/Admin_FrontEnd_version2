@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../components/Navbar';
 import AcademicNotificationBell from '../components/AcademicNotificationBell';
+import ManagerNotificationBell from '../components/ManagerNotificationBell';
 import { getTodayLiveClasses, getAllClasses, getBatchById, getEnrolledStudentsByBatch, getCurrentUserProfile } from '../services/Api';
 import { Video, ExternalLink, Clock, Users, BookOpen, X, GraduationCap, Search, Filter, Calendar, History, Download } from 'lucide-react';
 
@@ -45,21 +46,29 @@ function LiveClassPage() {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   // Get display name - ONLY show full name, never username
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
-    return "Academic Coordinator";
+    
+    // Fallback based on role
+    const roleTitles = {
+      'admin': 'Super Admin',
+      'manager': 'Manager',
+      'academic': 'Academic Coordinator'
+    };
+    return roleTitles[decodedToken?.role] || "User";
+  };
+
+  // Get role display title
+  const getRoleTitle = () => {
+    const roleTitles = {
+      'admin': 'Super Admin',
+      'manager': 'Manager',
+      'academic': 'Academic Coordinator'
+    };
+    return roleTitles[decodedToken?.role] || "User";
   };
 
   // Mobile and sidebar handling
@@ -586,7 +595,8 @@ function LiveClassPage() {
               {/* Right: Notifications, Profile */}
               <div className="flex items-center space-x-2 sm:space-x-4">
                 {/* Notifications */}
-                <AcademicNotificationBell />
+                {decodedToken?.role === 'academic' && <AcademicNotificationBell />}
+                {(decodedToken?.role === 'manager' || decodedToken?.role === 'admin') && <ManagerNotificationBell />}
 
                 {/* Profile Dropdown */}
                 <div className="relative">
@@ -621,9 +631,9 @@ function LiveClassPage() {
                         {/* Header Section */}
                         <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
                           <h3 className="font-bold text-gray-800 text-base">
-                            Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}
+                            Welcome, {getDisplayName()?.split(' ')[0] || "User"}
                           </h3>
-                          <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                          <p className="text-sm text-gray-500 mt-1">{getRoleTitle()}</p>
                         </div>
 
                         {/* Menu Items */}
@@ -631,7 +641,13 @@ function LiveClassPage() {
                           {/* Account Settings */}
                           <button
                             onClick={() => {
-                              window.location.href = '/academic-coordinator/settings';
+                              const settingsPaths = {
+                                'academic': '/academic-coordinator/settings',
+                                'manager': '/manager/account-settings',
+                                'admin': '/manager/account-settings' // Admin usually shares manager settings or similar
+                              };
+                              const path = settingsPaths[decodedToken?.role] || '/account-settings';
+                              window.location.href = path;
                               setIsProfileDropdownOpen(false);
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"

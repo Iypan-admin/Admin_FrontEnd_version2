@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import AcademicNotificationBell from "../components/AcademicNotificationBell";
+import ManagerNotificationBell from "../components/ManagerNotificationBell";
+import AdminNotificationBell from "../components/AdminNotificationBell";
 import {
   createUser,
   getAllUsers,
@@ -72,17 +74,8 @@ const ManageUsersPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   // Get display name
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -602,6 +595,8 @@ const ManageUsersPage = () => {
 
               {/* Right: Notifications, Profile */}
               <div className="flex items-center space-x-2 sm:space-x-4">
+                {role === "manager" && <ManagerNotificationBell />}
+                {role === "admin" && <AdminNotificationBell />}
                 {role === "academic" && <AcademicNotificationBell />}
 
                 {/* Profile Dropdown */}
@@ -617,7 +612,7 @@ const ManageUsersPage = () => {
                         className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-md cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
                       />
                     ) : (
-                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all shadow-md">
                         {getDisplayName()?.charAt(0).toUpperCase() || "A"}
                       </div>
                     )}
@@ -634,15 +629,21 @@ const ManageUsersPage = () => {
                       <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
                         <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
                           <h3 className="font-bold text-gray-800 text-base">
-                            Welcome, {getDisplayName()?.split(' ')[0] || "Coordinator"}
+                            Welcome, {getDisplayName()?.split(' ')[0] || "User"}
                           </h3>
-                          <p className="text-sm text-gray-500 mt-1">Academic Coordinator</p>
+                          <p className="text-sm text-gray-500 mt-1 capitalize">{role || "Academic Coordinator"}</p>
                         </div>
 
                         <div className="py-2">
                           <button
                             onClick={() => {
-                              navigate('/academic-coordinator/settings');
+                              const settingsPaths = {
+                                'academic': '/account-settings',
+                                'manager': '/manager/account-settings',
+                                'admin': '/admin/account-settings'
+                              };
+                              const path = settingsPaths[role] || '/account-settings';
+                              navigate(path);
                               setIsProfileDropdownOpen(false);
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
@@ -657,7 +658,7 @@ const ManageUsersPage = () => {
                           <button
                             onClick={() => {
                               localStorage.removeItem("token");
-                              navigate("/login");
+                              navigate("/");
                               setIsProfileDropdownOpen(false);
                             }}
                             className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"

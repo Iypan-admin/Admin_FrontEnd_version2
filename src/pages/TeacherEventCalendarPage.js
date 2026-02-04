@@ -32,32 +32,49 @@ const TeacherEventCalendarPage = () => {
     }
     return '16rem';
   });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Get current user's name from token
   const token = localStorage.getItem("token");
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   const getDisplayName = () => {
-    // Priority 1: Token full_name (always use this if available and it's a full name)
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
-    // Priority 2: tutorInfo.full_name only if it's a proper full name (has spaces)
-    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '' && isFullName(tutorInfo.full_name)) {
-      return tutorInfo.full_name;
-    }
-    // Priority 3: Token full_name even if it doesn't have spaces (better than username)
+    // Priority 1: Token full_name
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
+    // Priority 2: tutorInfo.full_name
+    if (tutorInfo?.full_name && tutorInfo.full_name.trim() !== '') {
+      return tutorInfo.full_name;
+    }
     // Fallback
     return "Teacher";
+  };
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
   };
 
   useEffect(() => {
@@ -376,14 +393,25 @@ const TeacherEventCalendarPage = () => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50" style={{ marginLeft: sidebarWidth, transition: 'margin-left 0.3s ease' }}>
+    <div className="min-h-screen bg-gray-50 flex" style={{ marginLeft: isMobile ? '0' : sidebarWidth, transition: 'margin-left 0.3s ease' }}>
       <Navbar />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
       {/* Navbar - BERRY Style */}
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-20 lg:z-30">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
           <div className="flex justify-between items-center py-3 sm:py-4 min-h-[4rem]">
             <div className="flex items-center gap-2 sm:gap-3 md:gap-4 min-w-0 flex-1">
+              {/* Mobile Toggle */}
+              <button 
+                onClick={toggleMobileMenu}
+                className="lg:hidden p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+              >
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              
               {/* Title Section - BERRY Style */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <div
@@ -711,6 +739,7 @@ const TeacherEventCalendarPage = () => {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

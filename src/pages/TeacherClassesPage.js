@@ -56,15 +56,7 @@ function TeacherClassesPage() {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -752,6 +744,21 @@ function TeacherClassesPage() {
                           Take Class
                         </button>
                         <div className="flex space-x-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/teacher/batch/${batch.batch_id}/assessment-marks`);
+                            }}
+                            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center justify-center"
+                            style={{ backgroundColor: '#f3e5f5', color: '#7b1fa2' }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = '#e1bee7'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = '#f3e5f5'}
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                            </svg>
+                            Assessment
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

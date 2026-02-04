@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import AcademicNotificationBell from "../components/AcademicNotificationBell";
+import ManagerNotificationBell from "../components/ManagerNotificationBell";
 import {
   getBatches,
   createBatch,
@@ -51,17 +52,8 @@ const ManageBatchesPage = () => {
   const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
   const tokenFullName = decodedToken?.full_name || null;
   
-  // Helper function to check if a name is a full name (has spaces) vs username
-  const isFullName = (name) => {
-    if (!name || name.trim() === '') return false;
-    return name.trim().includes(' ');
-  };
-  
   // Get display name
   const getDisplayName = () => {
-    if (tokenFullName && tokenFullName.trim() !== '' && isFullName(tokenFullName)) {
-      return tokenFullName;
-    }
     if (tokenFullName && tokenFullName.trim() !== '') {
       return tokenFullName;
     }
@@ -491,8 +483,9 @@ const ManageBatchesPage = () => {
 
                 {/* Right: Notifications, Profile */}
                 <div className="flex items-center space-x-2 sm:space-x-4">
-                  {/* Notifications - Only for Academic role */}
+                  {/* Notifications */}
                   {userRole === 'academic' && <AcademicNotificationBell />}
+                  {(userRole === 'manager' || userRole === 'admin') && <ManagerNotificationBell />}
 
                   {/* Profile Dropdown */}
                   <div className="relative">
@@ -530,11 +523,17 @@ const ManageBatchesPage = () => {
                           
                           {/* Menu Items */}
                           <div className="py-2">
-                            {/* Account Settings - Only for Academic role */}
-                            {userRole === 'academic' && (
+                            {/* Account Settings */}
+                            {(userRole === 'academic' || userRole === 'manager' || userRole === 'admin') && (
                               <button
                                 onClick={() => {
-                                  navigate('/academic-coordinator/settings');
+                                  const settingsPaths = {
+                                    'academic': '/academic-coordinator/settings',
+                                    'manager': '/manager/account-settings',
+                                    'admin': '/manager/account-settings'
+                                  };
+                                  const path = settingsPaths[userRole] || '/account-settings';
+                                  navigate(path);
                                   setIsProfileDropdownOpen(false);
                                 }}
                                 className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"

@@ -41,7 +41,8 @@ const LoginPage = ({ setRole }) => {
     return () => clearInterval(refreshInterval);
   }, []);
 
-  // Enhanced auto-scroll effect for desktop announcements - Infinite continuous scroll
+  // Enhanced auto-scroll effect for desktop announcements - News ticker style continuous scroll (bottom to top)
+  // Only scrolls if content overflows the container
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer || events.length === 0) return;
@@ -50,45 +51,57 @@ const LoginPage = ({ setRole }) => {
     let isScrolling = true;
     const scrollSpeed = 0.8; // Smooth scroll speed
     let firstSetHeight = 0;
+    let containerHeight = 0;
     let animationFrameId = null;
+    let needsScrolling = false;
 
-    // Initialize: measure the height of first content set
+    // Initialize: measure the height of content and check if scrolling is needed
     const initializeScroll = () => {
       const firstContentSet = scrollContainer.querySelector('div > div:first-child');
       if (firstContentSet) {
         firstSetHeight = firstContentSet.scrollHeight;
-        // Start from top
-        scrollContainer.scrollTop = 0;
-        scrollPosition = 0;
+        containerHeight = scrollContainer.clientHeight;
+        
+        // Only enable scrolling if content height exceeds container height
+        needsScrolling = firstSetHeight > containerHeight;
+        
+        if (needsScrolling) {
+          // Start from top (news ticker starts from top)
+          scrollContainer.scrollTop = 0;
+          scrollPosition = 0;
+          // Start scrolling
+          animationFrameId = requestAnimationFrame(autoScroll);
+        } else {
+          // Content fits in container, no scrolling needed - stay at top
+          scrollContainer.scrollTop = 0;
+        }
       }
     };
 
-    // Wait a bit for DOM to render
-    setTimeout(initializeScroll, 200);
-
     const autoScroll = () => {
-      if (!isScrolling || firstSetHeight === 0) {
-        animationFrameId = requestAnimationFrame(autoScroll);
+      if (!isScrolling || !needsScrolling || firstSetHeight === 0 || containerHeight === 0) {
+        if (needsScrolling) {
+          animationFrameId = requestAnimationFrame(autoScroll);
+        }
         return;
       }
       
-      // Scroll from top to bottom (content moves up)
+      // News ticker style: scroll from top to bottom (content moves up visually)
       scrollPosition += scrollSpeed;
+      scrollContainer.scrollTop = scrollPosition;
       
-      // When we've scrolled through one set, reset to top seamlessly
-      // Since we have duplicated content, the reset is invisible
+      // When we've scrolled through one complete set, reset to top seamlessly
+      // The duplicate set makes the loop invisible (continuous upward scroll)
       if (scrollPosition >= firstSetHeight) {
         scrollPosition = 0;
         scrollContainer.scrollTop = 0;
-      } else {
-        scrollContainer.scrollTop = scrollPosition;
       }
       
       animationFrameId = requestAnimationFrame(autoScroll);
     };
 
-    // Start scrolling
-    animationFrameId = requestAnimationFrame(autoScroll);
+    // Wait a bit for DOM to render
+    setTimeout(initializeScroll, 200);
 
     // Pause on hover
     const handleMouseEnter = () => {
@@ -111,7 +124,8 @@ const LoginPage = ({ setRole }) => {
     };
   }, [events]); // Re-run when events change
 
-  // Auto-scroll effect for mobile announcement modal - Infinite continuous scroll
+  // Auto-scroll effect for mobile announcement modal - News ticker style continuous scroll (bottom to top)
+  // Only scrolls if content overflows the container
   useEffect(() => {
     if (!showMobileAnnouncement || events.length === 0) return;
     
@@ -122,44 +136,57 @@ const LoginPage = ({ setRole }) => {
     let isScrolling = true;
     const scrollSpeed = 0.6; // Smooth scroll speed for mobile
     let firstSetHeight = 0;
+    let containerHeight = 0;
     let animationFrameId = null;
+    let needsScrolling = false;
 
-    // Initialize: measure the height of first content set
+    // Initialize: measure the height of content and check if scrolling is needed
     const initializeScroll = () => {
       const firstContentSet = mobileScrollContainer.querySelector('div > div:first-child');
       if (firstContentSet) {
         firstSetHeight = firstContentSet.scrollHeight;
-        // Start from top
-        mobileScrollContainer.scrollTop = 0;
-        scrollPosition = 0;
+        containerHeight = mobileScrollContainer.clientHeight;
+        
+        // Only enable scrolling if content height exceeds container height
+        needsScrolling = firstSetHeight > containerHeight;
+        
+        if (needsScrolling) {
+          // Start from top (news ticker starts from top)
+          mobileScrollContainer.scrollTop = 0;
+          scrollPosition = 0;
+          // Start scrolling
+          animationFrameId = requestAnimationFrame(autoScroll);
+        } else {
+          // Content fits in container, no scrolling needed - stay at top
+          mobileScrollContainer.scrollTop = 0;
+        }
       }
     };
 
-    // Wait a bit for DOM to render
-    setTimeout(initializeScroll, 200);
-
     const autoScroll = () => {
-      if (!isScrolling || !showMobileAnnouncement || firstSetHeight === 0) {
-        animationFrameId = requestAnimationFrame(autoScroll);
+      if (!isScrolling || !showMobileAnnouncement || !needsScrolling || firstSetHeight === 0 || containerHeight === 0) {
+        if (needsScrolling) {
+          animationFrameId = requestAnimationFrame(autoScroll);
+        }
         return;
       }
       
-      // Scroll from top to bottom (content moves up)
+      // News ticker style: scroll from top to bottom (content moves up visually)
       scrollPosition += scrollSpeed;
+      mobileScrollContainer.scrollTop = scrollPosition;
       
-      // When we've scrolled through one set, reset to top seamlessly
+      // When we've scrolled through one complete set, reset to top seamlessly
+      // The duplicate set makes the loop invisible (continuous upward scroll)
       if (scrollPosition >= firstSetHeight) {
         scrollPosition = 0;
         mobileScrollContainer.scrollTop = 0;
-      } else {
-        mobileScrollContainer.scrollTop = scrollPosition;
       }
       
       animationFrameId = requestAnimationFrame(autoScroll);
     };
 
-    // Start scrolling
-    animationFrameId = requestAnimationFrame(autoScroll);
+    // Wait a bit for DOM to render
+    setTimeout(initializeScroll, 200);
 
     // Pause on touch start (mobile)
     const handleTouchStart = () => {
@@ -320,7 +347,7 @@ const LoginPage = ({ setRole }) => {
           navigate("/teacher");
           break;
         case "cardadmin":
-          navigate("/cardadmin");
+          navigate("/card-admin");
           break;
         case "resource_manager":
           navigate("/resource-manager");
@@ -449,10 +476,10 @@ const LoginPage = ({ setRole }) => {
                   </div>
                 ) : events.length > 0 ? (
                   <>
-                    {/* First set of events */}
+                    {/* First set of events for continuous scroll */}
                     <div className="space-y-2 md:space-y-3">
                       {events.map((event, index) => (
-                        <div key={`first-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
+                        <div key={`event-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
                           <div className="flex items-start gap-2 md:gap-3">
                             <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
@@ -478,10 +505,10 @@ const LoginPage = ({ setRole }) => {
                         </div>
                       ))}
                     </div>
-                    {/* Duplicated set for seamless loop */}
+                    {/* Duplicate set for seamless continuous loop (news ticker style) */}
                     <div className="space-y-2 md:space-y-3">
                       {events.map((event, index) => (
-                        <div key={`second-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
+                        <div key={`event-dup-${event.id || index}`} className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 md:p-3 border border-white/20 hover:bg-white/20 transition-colors shadow-sm">
                           <div className="flex items-start gap-2 md:gap-3">
                             <div className={`w-7 h-7 md:w-8 md:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs md:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
@@ -581,8 +608,8 @@ const LoginPage = ({ setRole }) => {
               <div className="relative p-4 flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   {/* Icon Container - BERRY Style */}
-                  <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center shadow-md border border-blue-100">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                     </svg>
                   </div>
@@ -591,8 +618,8 @@ const LoginPage = ({ setRole }) => {
                     <p className="text-gray-600 text-sm font-medium">{events.length} updates available</p>
                   </div>
                 </div>
-                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
-                  <svg className="w-5 h-5 text-white transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shadow-md border border-blue-100">
+                  <svg className="w-5 h-5 text-blue-600 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -760,29 +787,34 @@ const LoginPage = ({ setRole }) => {
           onClick={() => setShowMobileAnnouncement(false)}
         >
           <div 
-            className="w-full sm:w-[90%] md:max-w-lg h-[85vh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl bg-white shadow-md border border-gray-200 relative overflow-hidden flex flex-col transform transition-transform duration-300 ease-out"
+            className="w-full sm:w-[90%] md:max-w-lg h-[85vh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl bg-white shadow-lg border border-gray-200 relative overflow-hidden flex flex-col transform transition-transform duration-300 ease-out"
             onClick={(e) => e.stopPropagation()}
             style={{
               animation: 'slideInFromRight 0.3s ease-out'
             }}
           >
             {/* Mobile Announcement Header - BERRY Style */}
-            <div className="bg-blue-600 px-4 sm:px-6 py-3 sm:py-4 sm:rounded-t-xl flex-shrink-0">
+            <div 
+              className="px-4 sm:px-6 py-3 sm:py-4 sm:rounded-t-xl flex-shrink-0"
+              style={{
+                background: "linear-gradient(to right, #2196f3, #1976d2)"
+              }}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-lg flex items-center justify-center shadow-md border border-white/30">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-md border border-white/30">
                     <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                     </svg>
                   </div>
                   <div>
                     <h3 className="text-sm sm:text-base font-bold text-white">Announcements</h3>
-                    <p className="text-blue-100 text-xs sm:text-sm">Latest Events & Updates</p>
+                    <p className="text-blue-200 text-xs sm:text-sm">Latest Events & Updates</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowMobileAnnouncement(false)}
-                  className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-lg flex items-center justify-center hover:bg-white/30 transition-colors shadow-md border border-white/30"
+                  className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center hover:bg-white/30 transition-colors shadow-md border border-white/30"
                 >
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -791,9 +823,8 @@ const LoginPage = ({ setRole }) => {
               </div>
             </div>
 
-            {/* Mobile Events Container with Auto-scroll - BERRY Style */}
-            <div className="relative flex-1 overflow-hidden min-h-0">
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-50/10 to-transparent z-10 pointer-events-none" />
+            {/* Mobile Events Container with Auto-scroll - BERRY Style (White Background) */}
+            <div className="relative flex-1 overflow-hidden min-h-0 bg-white">
               <div className="h-full overflow-y-auto scrollbar-hide p-4 sm:p-5 md:p-6" ref={mobileScrollContainerRef} style={{ scrollBehavior: 'auto' }}>
                 {eventsLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -802,30 +833,28 @@ const LoginPage = ({ setRole }) => {
                   </div>
                 ) : events.length > 0 ? (
                   <>
-                    {/* First set of events */}
+                    {/* First set of events for continuous scroll */}
                     <div className="space-y-3 sm:space-y-4">
                       {events.map((event, index) => (
-                        <div key={`mobile-first-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm`}>
-                          <div className="flex items-start gap-2">
-                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md`}>
+                        <div key={`mobile-event-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm hover:shadow-md transition-all duration-300`}>
+                          <div className="flex items-start gap-2 sm:gap-3">
+                            <div className={`w-7 h-7 sm:w-8 sm:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs sm:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-semibold text-gray-900 text-xs">{event.title}</h4>
+                                <h4 className="font-semibold text-gray-900 text-xs sm:text-sm">{event.title}</h4>
                                 {event.event_type && (
-                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] font-medium rounded`}>
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] sm:text-[10px] font-medium rounded`}>
                                     {getEventTypeLabel(event.event_type)}
                                   </span>
                                 )}
                               </div>
-                              <p className="text-gray-700 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <p className="text-gray-600 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
+                              <p className="text-gray-700 text-[10px] sm:text-xs line-clamp-2 mb-1.5 sm:mb-2 mt-1">{event.description || 'No description available'}</p>
+                              <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 text-[10px] sm:text-xs font-medium">
+                                <span>{formatEventDate(event.event_start_date)}</span>
                                 {event.event_start_time && (
-                                  <p className="text-gray-600 text-xs font-medium">
-                                    {formatEventTime(event.event_start_time, event.event_end_time)}
-                                  </p>
+                                  <span>• {formatEventTime(event.event_start_time, event.event_end_time)}</span>
                                 )}
                               </div>
                             </div>
@@ -833,30 +862,28 @@ const LoginPage = ({ setRole }) => {
                         </div>
                       ))}
                     </div>
-                    {/* Duplicated set for seamless loop */}
+                    {/* Duplicate set for seamless continuous loop (news ticker style) */}
                     <div className="space-y-3 sm:space-y-4">
                       {events.map((event, index) => (
-                        <div key={`mobile-second-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm`}>
-                          <div className="flex items-start gap-2">
-                            <div className={`w-6 h-6 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md`}>
+                        <div key={`mobile-event-dup-${event.id || index}`} className={`bg-gradient-to-br ${getEventTypeColor(event.event_type)} rounded-xl p-3 border shadow-sm hover:shadow-md transition-all duration-300`}>
+                          <div className="flex items-start gap-2 sm:gap-3">
+                            <div className={`w-7 h-7 sm:w-8 sm:h-8 ${getEventTypeIconColor(event.event_type)} rounded-lg flex items-center justify-center text-white text-xs sm:text-sm font-bold flex-shrink-0 shadow-md`}>
                               {getEventTypeIcon(event.event_type)}
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-semibold text-gray-900 text-xs">{event.title}</h4>
+                                <h4 className="font-semibold text-gray-900 text-xs sm:text-sm">{event.title}</h4>
                                 {event.event_type && (
-                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] font-medium rounded`}>
+                                  <span className={`px-1.5 py-0.5 ${getEventTypeLabelColor(event.event_type)} text-[9px] sm:text-[10px] font-medium rounded`}>
                                     {getEventTypeLabel(event.event_type)}
                                   </span>
                                 )}
                               </div>
-                              <p className="text-gray-700 text-xs mt-1 line-clamp-2">{event.description || 'No description available'}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <p className="text-gray-600 text-xs font-medium">{formatEventDate(event.event_start_date)}</p>
+                              <p className="text-gray-700 text-[10px] sm:text-xs line-clamp-2 mb-1.5 sm:mb-2 mt-1">{event.description || 'No description available'}</p>
+                              <div className="flex items-center gap-1.5 sm:gap-2 text-gray-600 text-[10px] sm:text-xs font-medium">
+                                <span>{formatEventDate(event.event_start_date)}</span>
                                 {event.event_start_time && (
-                                  <p className="text-gray-600 text-xs font-medium">
-                                    {formatEventTime(event.event_start_time, event.event_end_time)}
-                                  </p>
+                                  <span>• {formatEventTime(event.event_start_time, event.event_end_time)}</span>
                                 )}
                               </div>
                             </div>
@@ -867,13 +894,13 @@ const LoginPage = ({ setRole }) => {
                   </>
                 ) : (
                   <div className="text-center py-8">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-200 shadow-sm">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3 border border-blue-200 shadow-sm">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </div>
-                    <p className="text-gray-700 text-xs">No upcoming events</p>
-                    <p className="text-gray-600 text-xs mt-1">Check back later for updates</p>
+                    <p className="text-gray-700 text-xs sm:text-sm">No upcoming events</p>
+                    <p className="text-gray-600 text-[10px] sm:text-xs mt-1">Check back later for updates</p>
                   </div>
                 )}
               </div>

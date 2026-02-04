@@ -1,18 +1,49 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import FinanceNotificationBell from "../components/FinanceNotificationBell";
 import {
   getAllPayments,
   approvePayment,
   editPaymentDuration,
+  getCurrentUserProfile
 } from "../services/Api";
 import EditTransactionModal from "../components/EditTransactionModal";
 // Icons will be replaced with inline SVG to avoid dependency issues
 
 const ApproveStudentsPage = () => {
+  const navigate = useNavigate();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingPayment, setEditingPayment] = useState(null);
+  
+  // Berry style state variables
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+
+  // Get current user's name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const userName = (decodedToken?.full_name && 
+                  decodedToken.full_name !== null && 
+                  decodedToken.full_name !== undefined && 
+                  String(decodedToken.full_name).trim() !== '') 
+  ? decodedToken.full_name 
+  : (decodedToken?.name || 'Finance Admin');
+
+  const getDisplayName = () => {
+    return userName;
+  };
 
   // Search & filter state
   const [searchTerm, setSearchTerm] = useState("");
@@ -36,7 +67,67 @@ const ApproveStudentsPage = () => {
   const [revenueFilterCourse, setRevenueFilterCourse] = useState("all");
   const [revenueFilterDateRange, setRevenueFilterDateRange] = useState({ start: "", end: "" });
 
-  // Fetch payments
+  // Toggle mobile menu
+  const toggleMobileMenu = () => {
+    const newState = !isMobileMenuOpen;
+    setIsMobileMenuOpen(newState);
+    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+  };
+
+  // Sync mobile menu state with Navbar
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+    return () => window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+  }, []);
+
+  // Fetch profile info
+  useEffect(() => {
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfilePictureUrl(response.data.profile_picture || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+    return () => {
+      window.removeEventListener('profileUpdated', fetchProfileInfo);
+    };
+  }, []);
+
+  // Berry style mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Listen for sidebar toggle
+  useEffect(() => {
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+    handleSidebarToggle(); // Initial check
+    
+    return () => {
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+    };
+  }, []);
+
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true);
@@ -322,7 +413,7 @@ const ApproveStudentsPage = () => {
     return (
       <div className="flex h-screen overflow-hidden">
         <Navbar />
-        <div className="flex-grow flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="flex-grow flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600 font-medium">Loading payment data...</p>
@@ -333,46 +424,180 @@ const ApproveStudentsPage = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-gray-50 flex relative">
       <Navbar />
-      <div className="flex-1 lg:ml-64 overflow-hidden">
-        <div className="h-screen overflow-y-auto">
-          <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
-            {/* Enhanced Header Section */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-                <div className="flex items-center space-x-4">
-                  <div className="p-4 bg-white/20 backdrop-blur-sm rounded-2xl">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      
+      {/* Main Content Area - BERRY Style */}
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+        {/* Top Header Bar - BERRY Style */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between">
+              {/* Left: Hamburger Menu & Welcome Text */}
+              <div className="flex items-center space-x-3 sm:space-x-4">
+                {/* Hamburger Menu Toggle */}
+                <button 
+                  onClick={toggleMobileMenu}
+                  className="lg:hidden p-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-all duration-200"
+                  title={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                >
+                  {isMobileMenuOpen ? (
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl font-bold mb-2">Payment Transactions</h1>
-                    <p className="text-blue-100 text-lg">Review and manage student payment transactions</p>
-                  </div>
-                </div>
+                  ) : (
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
                 
-                {/* Enhanced Revenue Stats */}
-                <div className="hidden lg:flex space-x-6">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{payments.length}</div>
-                    <div className="text-blue-200 text-sm">Total Payments</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{revenueStats.totalPayments}</div>
-                    <div className="text-blue-200 text-sm">Approved</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">₹{revenueStats.totalRevenue.toLocaleString()}</div>
-                    <div className="text-blue-200 text-sm">Total Revenue</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">₹{Math.round(revenueStats.averagePayment).toLocaleString()}</div>
-                    <div className="text-blue-200 text-sm">Avg Payment</div>
-                  </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+                    Student Payment Approval 👋
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                    Review and approve student payment requests
+                  </p>
                 </div>
               </div>
+
+              {/* Right: Notifications & Profile Dropdown */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <FinanceNotificationBell />
+
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all shadow-md">
+                        {getDisplayName()?.charAt(0).toUpperCase() || "F"}
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Profile Dropdown Menu */}
+                  {isProfileDropdownOpen && (
+                    <>
+                      {/* Backdrop */}
+                      <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)}></div>
+                      
+                      {/* Dropdown Box - BERRY Style */}
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        {/* Header Section */}
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Welcome, {getDisplayName()?.split(' ')[0] || "User"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1">Finance Admin</p>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="py-2">
+                          {/* Account Settings */}
+                          <button
+                            onClick={() => {
+                              navigate('/finance/account-settings');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+
+                          {/* Logout */}
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem("token");
+                              navigate("/login");
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+            {/* Statistics Cards - BERRY Style */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {[
+                {
+                  title: "Approved Payments",
+                  count: loading ? "..." : payments.filter(p => p.status).length,
+                  icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+                  gradient: "from-green-500 to-green-600",
+                  error: error
+                },
+                {
+                  title: "Pending Payments",
+                  count: loading ? "..." : payments.filter(p => !p.status).length,
+                  icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+                  gradient: "from-blue-500 to-blue-600",
+                  error: error
+                },
+                {
+                  title: "Total Revenue",
+                  count: loading ? "..." : `₹${payments.filter(p => p.status).reduce((sum, p) => sum + (parseFloat(p.final_fees) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}`,
+                  icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+                  gradient: "from-purple-500 to-purple-600",
+                  error: error
+                }
+              ].map((stat, index) => (
+                <div 
+                  key={index} 
+                  className="bg-gradient-to-br bg-white rounded-xl shadow-lg p-4 sm:p-6 relative overflow-hidden border border-gray-200"
+                  style={{ background: `linear-gradient(to bottom right, ${stat.gradient.includes('blue') ? '#2196f3' : stat.gradient.includes('green') ? '#4caf50' : '#9c27b0'}, ${stat.gradient.includes('blue') ? '#1976d2' : stat.gradient.includes('green') ? '#388e3c' : '#7b1fa2'})` }}
+                >
+                  <div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8 sm:-translate-y-10 sm:translate-x-10"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-3 sm:mb-4">
+                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 sm:p-3">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={stat.icon} />
+                        </svg>
+                      </div>
+                    </div>
+                    <p className="text-white/90 text-xs sm:text-sm font-medium mb-1">{stat.title}</p>
+                    <div className="text-white text-3xl sm:text-4xl font-bold">
+                      {loading ? (
+                        <span className="inline-block animate-pulse bg-white/30 h-10 w-20 rounded"></span>
+                      ) : (
+                        stat.count
+                      )}
+                    </div>
+                    {stat.error && (
+                      <div className="mt-4 p-3 bg-red-50 border-l-4 border-red-400 rounded">
+                        <p className="text-red-600 text-sm">{stat.error}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Enhanced Search and Filter Section */}
@@ -818,7 +1043,7 @@ const ApproveStudentsPage = () => {
             {/* Enhanced Table Section */}
             {filteredPayments.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-12 text-center">
-                <div className="mx-auto w-24 h-24 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-6">
+                <div className="mx-auto w-24 h-24 bg-gradient-to-r from-blue-100 to-blue-100 rounded-full flex items-center justify-center mb-6">
                   <svg
                     className="w-12 h-12 text-blue-500"
                     fill="none"
@@ -955,7 +1180,7 @@ const ApproveStudentsPage = () => {
                           
                           return (
                             <React.Fragment key={payment.payment_id}>
-                              <tr className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 group">
+                              <tr className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-50 transition-all duration-200 group">
                                 {/* Payment Details */}
                                 <td className="px-4 py-4 text-sm">
                                   <div className="space-y-2">
@@ -978,7 +1203,7 @@ const ApproveStudentsPage = () => {
                                 <td className="px-4 py-4 text-sm">
                                   <div className="space-y-2">
                                     <div className="flex items-center space-x-3">
-                                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-xs">
+                                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-xs">
                                         {payment.student_name?.charAt(0)?.toUpperCase() || "?"}
                                       </div>
                                       <div>
@@ -1272,7 +1497,7 @@ const ApproveStudentsPage = () => {
                       <div key={payment.payment_id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
                               {payment.student_name?.charAt(0)?.toUpperCase() || "?"}
                             </div>
                             <div>

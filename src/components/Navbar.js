@@ -13,6 +13,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openSubmenu, setOpenSubmenu] = useState(null);
   const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+  const [userFullName, setUserFullName] = useState(null);
   
   // Listen for mobile menu toggle events from other components
   useEffect(() => {
@@ -30,7 +31,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
     window.dispatchEvent(new CustomEvent('mobileMenuStateChange', { detail: isMobileMenuOpen }));
   }, [isMobileMenuOpen]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    // Load from localStorage for teacher and academic coordinator roles
+    // Load from localStorage for professional roles
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sidebarCollapsed');
       return saved === 'true';
@@ -40,36 +41,56 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
   
   // Save sidebar collapsed state and update CSS variable
   useEffect(() => {
-    if (role === 'teacher' || role === 'academic') {
+    if (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager') {
       localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.toString());
       document.documentElement.style.setProperty('--sidebar-width', isSidebarCollapsed ? '6rem' : '16rem');
       window.dispatchEvent(new Event('sidebarToggle'));
     }
   }, [isSidebarCollapsed, role]);
-  // Prioritize full_name, but only if it exists and is not empty/null
-  const userName = (decodedToken?.full_name && 
+  // Prioritize full_name from user table (userFullName), then token, then name
+  const userName = (userFullName && 
+                    userFullName !== null && 
+                    userFullName !== undefined && 
+                    String(userFullName).trim() !== '') 
+    ? userFullName
+    : (decodedToken?.full_name && 
                     decodedToken.full_name !== null && 
                     decodedToken.full_name !== undefined && 
                     String(decodedToken.full_name).trim() !== '') 
     ? decodedToken.full_name 
     : (decodedToken?.name || null);
 
-  // Fetch user profile picture
+  // Fetch user profile picture and full name
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const profile = await getCurrentUserProfile();
-        if (profile && profile.data && profile.data.profile_picture) {
-          setProfilePictureUrl(profile.data.profile_picture);
+        if (profile && profile.data) {
+          if (profile.data.profile_picture) {
+            setProfilePictureUrl(profile.data.profile_picture);
+          }
+          if (profile.data.full_name) {
+            setUserFullName(profile.data.full_name);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch profile:', err);
       }
     };
     
-    if (role === 'teacher' || role === 'academic') {
+    if (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager') {
       fetchProfile();
     }
+    
+    // Listen for profile update events
+    const handleProfileUpdate = () => {
+      fetchProfile();
+    };
+    window.addEventListener('profileUpdated', handleProfileUpdate);
+    
+    return () => {
+      window.removeEventListener('profileUpdated', handleProfileUpdate);
+    };
   }, [role]);
 
   const handleLogout = () => {
@@ -107,6 +128,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinejoin="round"
                 strokeWidth="2"
                 d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
@@ -350,10 +390,47 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
             </svg>
           ),
         },
-        // Add Manage States option
+        {
+          path: "/manager/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-users",
+          name: "Manage User",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
         {
           path: "/manage-states",
-          name: "Manage States",
+          name: "Manage State",
           icon: (
             <svg
               className="w-5 h-5"
@@ -377,8 +454,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           ),
         },
         {
-          path: "/manage-centers",
           name: "Manage Centers",
+          hasSubmenu: true,
           icon: (
             <svg
               className="w-5 h-5"
@@ -394,44 +471,26 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
               />
             </svg>
           ),
-        },
-        {
-          path: "/center-request-approval",
-          name: "Center Requests",
-          icon: (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          ),
-        },
-        {
-          path: "/manage-users",
-          name: "Manage Users",
-          icon: (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-              />
-            </svg>
-          ),
+          submenu: [
+            {
+              path: "/manage-centers",
+              name: "View Center",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              ),
+            },
+            {
+              path: "/center-request-approval",
+              name: "Center Request",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ),
+            },
+          ],
         },
         {
           name: "Manage Course",
@@ -454,12 +513,12 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           submenu: [
             {
               path: "/manage-courses",
-              name: "Course",
+              name: "Courses",
               icon: (
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
-          ),
+                </svg>
+              ),
             },
             {
               path: "/course-fees",
@@ -492,27 +551,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           ),
         },
         {
-          path: "/live-class",
-          name: "Live Classes",
-          icon: (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-          ),
-        },
-        {
           path: "/students",
-          name: "All Students",
+          name: "Manage Student",
           icon: (
             <svg
               className="w-5 h-5"
@@ -549,8 +589,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           ),
         },
         {
-          path: null, // Parent menu with submenu
           name: "Center Leads",
+          hasSubmenu: true,
           icon: (
             <svg
               className="w-5 h-5"
@@ -566,47 +606,45 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
               />
             </svg>
           ),
-          hasSubmenu: true,
           submenu: [
             {
               path: "/all-leads",
-              name: "All Leads",
+              name: "All Centre Leads",
               icon: (
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               ),
             },
             {
               path: "/demo-management",
-              name: "Demo Schedule",
+              name: "Lead Demo Schedule",
               icon: (
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               ),
             },
           ],
+        },
+        {
+          path: "/live-class",
+          name: "Live classes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          ),
         },
       ],
       financial: [
@@ -625,6 +663,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinejoin="round"
                 strokeWidth="2"
                 d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/finance/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
@@ -1082,6 +1139,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 ),
               },
               {
+              path: `/teacher/batch/${batchId}/assessment-marks`,
+              name: "Assessment",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                    />
+                  </svg>
+                ),
+              },
+              {
               path: `/teacher/batch/${batchId}/details`,
               name: "Batch Details",
                 icon: (
@@ -1218,6 +1294,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinejoin="round"
                 strokeWidth="2"
                 d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center-admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
@@ -1399,6 +1494,26 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
           ),
         },
         {
+          path: "/state-admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+
+        {
           path: "/state-admin/center-requests",
           name: "Center Requests",
           icon: (
@@ -1540,7 +1655,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
       ],
       cardadmin: [
         {
-          path: "/cardadmin",
+          path: "/card-admin",
           name: "Dashboard",
           icon: (
             <svg
@@ -1553,14 +1668,14 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth="2"
-                d="M3 12l9-9 9 9v8a2 2 0 01-2 2h-4a2 2 0 01-2-2v-4H9v4a2 2 0 01-2 2H3v-8z"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
               />
             </svg>
           ),
         },
         {
-          path: "/influencer-onboarding",
-          name: "Influencer Onboarding",
+          path: "/card-admin/event-calendar",
+          name: "Event Calendar",
           icon: (
             <svg
               className="w-5 h-5"
@@ -1572,30 +1687,33 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth="2"
-                d="M16 12a4 4 0 01-8 0m8 0a4 4 0 00-8 0m8 0v1a4 4 0 01-4 4m0-4v1a4 4 0 004 4"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
         },
-        // {
-        //   path: "/generate-card",
-        //   name: "Generate card",
-        //   icon: (
-        //     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        //       <rect
-        //         x="2" y="7" width="20" height="10" rx="2" ry="2"
-        //         strokeLinecap="round"
-        //         strokeLinejoin="round"
-        //         strokeWidth="2"
-        //       />
-        //       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2 11h20" />
-        //     </svg>
-        //   ),
-        // },
-
+        {
+          path: "/influencer-onboarding",
+          name: "Influencer Board",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
         {
           path: "/activate-card",
-          name: "Giveway Pass Entry",
+          name: "Activate Card",
           icon: (
             <svg
               className="w-5 h-5"
@@ -1656,6 +1774,25 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 strokeLinejoin="round"
                 strokeWidth="2"
                 d="M3 12l9-9 9 9v8a2 2 0 01-2 2h-4a2 2 0 01-2-2v-4H9v4a2 2 0 01-2 2H3v-8z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/resource-manager/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
           ),
@@ -1799,42 +1936,27 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
       {/* Mobile Menu Overlay - Lower z-index for teacher and academic roles so sidebar appears above */}
       {isMobileMenuOpen && (
         <div
-          className={`fixed inset-0 bg-black bg-opacity-50 lg:hidden ${role === 'teacher' || role === 'academic' ? 'z-[45]' : 'z-40'}`}
+          className={`fixed inset-0 bg-black bg-opacity-50 lg:hidden ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'z-[45]' : 'z-40'}`}
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
-      {/* Enhanced Mobile Menu Button - Hidden for Teacher and Academic Coordinator Roles */}
-      {role !== 'teacher' && role !== 'academic' && (
-      <button
-        className="fixed top-4 left-4 p-3 rounded-xl bg-gradient-to-r from-gray-800 to-gray-900 text-white lg:hidden z-50 
-                   shadow-lg shadow-gray-900/50 hover:shadow-xl hover:shadow-gray-900/60 
-                   transition-all duration-300 transform hover:scale-105 active:scale-95
-                   border border-gray-700/50 backdrop-blur-sm"
-        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-      >
-        <div className="relative">
-          <svg className={`w-6 h-6 transition-transform duration-300 ${isMobileMenuOpen ? 'rotate-90' : ''}`} 
-               fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          {/* Pulse animation */}
-          <div className="absolute inset-0 rounded-xl bg-blue-500/20 animate-ping opacity-0"></div>
-        </div>
-      </button>
-      )}
+
 
       {/* Enhanced Sidebar Navigation */}
-      <div className={`${role === 'teacher' || role === 'academic' ? 'fixed' : 'fixed'} inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } ${role === 'teacher' || role === 'academic' ? 'lg:translate-x-0' : 'lg:translate-x-0 lg:static lg:inset-0'} transition-all duration-300 ease-in-out
-        h-screen ${isSidebarCollapsed && (role === 'teacher' || role === 'academic') ? 'w-24' : 'w-64'} ${role === 'teacher' || role === 'academic' ? '' : '-mr-64'} ${role === 'teacher' || role === 'academic' 
+      <div className={`${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'fixed' : 'fixed'} inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'lg:translate-x-0' : 'lg:translate-x-0 lg:static lg:inset-0'} transition-all duration-300 ease-in-out
+        h-screen ${isSidebarCollapsed && (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager') ? 'w-24' : 'w-64'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? '' : '-mr-64'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager'
           ? 'bg-white text-gray-800' 
           : 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100'
         } 
-        flex flex-col shadow-2xl ${role === 'teacher' || role === 'academic' ? 'shadow-gray-200' : 'shadow-gray-900/50'} ${role === 'teacher' || role === 'academic' ? 'z-[60]' : 'z-40'} border-r ${role === 'teacher' || role === 'academic' ? 'border-gray-200' : 'border-gray-700/30'} backdrop-blur-sm`}
+          ? 'bg-white text-gray-800' 
+          : 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100'
+        } 
+        flex flex-col shadow-2xl ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'shadow-gray-200' : 'shadow-gray-900/50'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'z-[60]' : 'z-40'} border-r ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'border-gray-200' : 'border-gray-700/30'} backdrop-blur-sm`}
       >
-        {/* Enhanced App Logo/Name - BERRY Style for Teacher and Academic Coordinator */}
-        {role === 'teacher' || role === 'academic' ? (
+        {/* Enhanced App Logo/Name - BERRY Style for Teacher, Academic Coordinator, and Manager */}
+        {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? (
           <div className={`relative flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-6'} py-4 border-b border-gray-200 bg-white`}>
             {!isSidebarCollapsed ? (
               <>
@@ -1849,7 +1971,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                   </div>
                   <div>
                     <span className="text-xl font-bold text-gray-800">ISML</span>
-                    <p className="text-xs text-gray-500">{role === 'teacher' ? 'Teacher Portal' : 'Academic Portal'}</p>
+                    <p className="text-xs text-gray-500">{role === 'teacher' ? 'Teacher Portal' : role === 'academic' ? 'Academic Portal' : role === 'manager' ? 'Manager Portal' : role === 'admin' ? 'Admin Portal' : role === 'financial' ? 'Finance Portal' : role === 'state' ? 'State Admin Portal' : 'Staff Portal'}</p>
+
                   </div>
                 </div>
                 {/* 3 Dot Toggle Button - BERRY Style */}
@@ -1886,17 +2009,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                 </button>
               </>
             )}
-            {/* Mobile Close Button - Hidden for Teacher and Academic Coordinator Roles */}
-            {role !== 'teacher' && role !== 'academic' && (
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="lg:hidden absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
+            {/* Mobile Close Button - Removed to fix icon overlap */}
           </div>
         ) : (
         <div className="relative flex items-center gap-4 px-6 py-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm">
@@ -1930,16 +2043,18 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
               Management System
             </p>
             <div className="flex items-center gap-2 mt-1">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
               <span className="text-xs text-green-400 font-medium">Online</span>
             </div>
           </div>
+
+          {/* Mobile Close Button - Removed to fix icon overlap */}
         </div>
         )}
 
-        {/* Enhanced Navigation Menu - BERRY Style for Teacher and Academic Coordinator */}
-        <nav className={`flex-1 overflow-y-auto py-4 ${role === 'teacher' || role === 'academic' ? 'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : 'scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'}`}>
-          {role === 'teacher' || role === 'academic' ? (
+        {/* Enhanced Navigation Menu - BERRY Style for Teacher, Academic Coordinator, and Manager */}
+        <nav className={`flex-1 overflow-y-auto py-4 ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : 'scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'}`}>
+          {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? (
             <div className={isSidebarCollapsed ? 'px-2' : 'px-3'}>
               {/* Collapsed Icons Only - Single Column, Centered */}
               {isSidebarCollapsed ? (
@@ -1995,7 +2110,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                     return (
                       <li key={item.path || item.name}>
                         {item.hasSubmenu ? (
-                          <div>
+                          <div className={`${isSidebarCollapsed ? 'w-full' : ''}`}>
                             <button
                               onClick={() => toggleSubmenu(item.name)}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
@@ -2196,8 +2311,8 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
         </nav>
 
         {/* Compact User Profile & Logout */}
-        <div className={`border-t ${role === 'teacher' || role === 'academic' ? 'border-gray-200' : 'border-gray-700/50'} ${isSidebarCollapsed && (role === 'teacher' || role === 'academic') ? 'p-2' : 'p-4'} ${role === 'teacher' || role === 'academic' ? 'bg-white' : 'bg-gradient-to-r from-gray-900/40 to-gray-800/40 backdrop-blur-sm'}`}>
-          {role === 'teacher' || role === 'academic' ? (
+        <div className={`border-t ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'border-gray-200' : 'border-gray-700/50'} ${isSidebarCollapsed && (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager') ? 'p-2' : 'p-4'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? 'bg-white' : 'bg-gradient-to-r from-gray-900/40 to-gray-800/40 backdrop-blur-sm'}`}>
+          {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' ? (
             <>
               {isSidebarCollapsed ? (
                 /* Collapsed User Profile - Icon Only */
@@ -2211,12 +2326,13 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                       />
                     ) : (
                       <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
-                        <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : 'T')}</span>
+                        <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : role === 'manager' ? 'M' : role === 'admin' ? 'A' : 'T')}</span>
                       </div>
                     )}
                     <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
                                   rounded-full border-2 border-white shadow-sm"></div>
                   </div>
+                  
                   <button
                     onClick={handleLogout}
                     className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-all duration-200"
@@ -2241,7 +2357,7 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
-                          <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : 'T')}</span>
+                          <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : role === 'manager' ? 'M' : role === 'admin' ? 'A' : 'T')}</span>
                         </div>
                       )}
                       <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
@@ -2250,11 +2366,12 @@ const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
                     
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">
-                        {userName || (role === 'academic' ? 'Academic Coordinator' : 'Teacher')}
+                        {userName || (role === 'academic' ? 'Academic Coordinator' : role === 'manager' ? 'Manager' : role === 'admin' ? 'Administrator' : role === 'financial' ? 'Finance Admin' : role === 'state' ? 'State Admin' : 'Staff')}
                       </p>
                       <p className="text-xs text-gray-500 capitalize truncate">
-                        {role === 'academic' ? 'Academic Coordinator' : (role || 'teacher')}
+                        {role === 'academic' ? 'Academic Coordinator' : role === 'manager' ? 'Manager' : role === 'admin' ? 'Administrator' : role === 'financial' ? 'Finance Admin' : role === 'state' ? 'State Admin' : (role || 'teacher')}
                       </p>
+
                     </div>
                   </div>
                   

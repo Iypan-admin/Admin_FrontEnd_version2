@@ -1,14 +1,25 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
+
 import { 
   getStateAdminInvoices,
   getStateAdminVerifiedInvoices,
   getInvoiceItems,
-  updateInvoiceStatus
+  updateInvoiceStatus,
+  getCurrentUserProfile
 } from "../services/Api";
 
+import InvoicePrintTemplate from "../components/InvoicePrintTemplate";
+import StateNotificationBell from "../components/StateNotificationBell";
+import { X, Printer, FileText } from "lucide-react";
+
+
+
 const InvoiceRequestsPage = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("pending"); // "pending" or "approved"
+
   const [invoices, setInvoices] = useState([]);
   const [filteredInvoices, setFilteredInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,8 +31,51 @@ const InvoiceRequestsPage = () => {
   const [filterCenter, setFilterCenter] = useState("");
   const [filterCycle, setFilterCycle] = useState("");
   const [verifying, setVerifying] = useState(new Set());
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [invoiceToPrint, setInvoiceToPrint] = useState(null);
+  const [printItems, setPrintItems] = useState([]);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [profileInfo, setProfileInfo] = useState(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+
+  
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true' ? '6rem' : '16rem';
+    }
+    return '16rem';
+  });
+
+
+  // Get current user's name from token
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  const userName = (decodedToken?.full_name && 
+                    decodedToken.full_name !== null && 
+                    decodedToken.full_name !== undefined && 
+                    String(decodedToken.full_name).trim() !== '') 
+    ? decodedToken.full_name 
+    : (decodedToken?.name || 'State Admin');
+
+
+  const getDisplayName = () => {
+    if (profileInfo?.full_name && profileInfo.full_name.trim() !== '') {
+      return profileInfo.full_name;
+    }
+    if (userName && userName.trim() !== '') {
+      return userName;
+    }
+    return "State Admin";
+  };
+
+
+
 
   // Fetch pending invoices
+
   const fetchPendingInvoices = useCallback(async () => {
     try {
       setLoading(true);
@@ -73,6 +127,49 @@ const InvoiceRequestsPage = () => {
       fetchVerifiedInvoices();
     }
   }, [activeTab, fetchPendingInvoices, fetchVerifiedInvoices]);
+
+  // Set up global event listeners and fetch profile info
+  useEffect(() => {
+    const handleMobileMenuStateChange = (event) => {
+      setIsMobileMenuOpen(event.detail);
+    };
+    window.addEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+
+    const handleSidebarToggle = () => {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      setSidebarWidth(saved === 'true' ? '6rem' : '16rem');
+    };
+    window.addEventListener('sidebarToggle', handleSidebarToggle);
+
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+
+    const fetchProfileInfo = async () => {
+      try {
+        const response = await getCurrentUserProfile();
+        if (response.success && response.data) {
+          setProfileInfo(response.data);
+          setProfilePictureUrl(response.data.profile_picture || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    fetchProfileInfo();
+
+    window.addEventListener('profileUpdated', fetchProfileInfo);
+
+    return () => {
+      window.removeEventListener('mobileMenuStateChange', handleMobileMenuStateChange);
+      window.removeEventListener('sidebarToggle', handleSidebarToggle);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('profileUpdated', fetchProfileInfo);
+    };
+  }, []);
+
+
 
   // Filter invoices
   useEffect(() => {
@@ -174,6 +271,28 @@ const InvoiceRequestsPage = () => {
     }
   };
 
+  const handlePrintPreview = async (invoice) => {
+    setInvoiceToPrint(invoice);
+    setShowPrintPreview(true);
+    
+    if (invoiceItemsMap[invoice.invoice_id]) {
+      setPrintItems(invoiceItemsMap[invoice.invoice_id]);
+    } else {
+      try {
+        const response = await getInvoiceItems(invoice.invoice_id);
+        if (response?.success && Array.isArray(response.data)) {
+          setPrintItems(response.data);
+          setInvoiceItemsMap(prev => ({
+            ...prev,
+            [invoice.invoice_id]: response.data
+          }));
+        }
+      } catch (err) {
+        console.error("Error fetching items for print:", err);
+      }
+    }
+  };
+
   // Format date
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -192,29 +311,124 @@ const InvoiceRequestsPage = () => {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-gray-50 flex relative">
       <Navbar />
-      <div className="flex-1 lg:ml-64 overflow-hidden">
-        <div className="h-screen overflow-y-auto">
-          <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
-            {/* Header Section */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-                <div className="flex items-center space-x-4">
-                  <div className="p-4 bg-white/20 backdrop-blur-sm rounded-2xl">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl font-bold mb-2">Invoice Requests</h1>
-                    <p className="text-blue-100 text-lg">
-                      Review and verify invoices from centers
-                    </p>
-                  </div>
+      <div className="flex-1 overflow-y-auto transition-all duration-300" style={{ marginLeft: isMobile ? '0' : (sidebarWidth === '6rem' ? '96px' : '256px') }}>
+
+
+        {/* Top Header Bar - BERRY Style */}
+        <nav className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-3 sm:py-4 min-h-[4rem]">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                {/* Mobile Toggle */}
+                <button 
+                  onClick={() => {
+                    const newState = !isMobileMenuOpen;
+                    setIsMobileMenuOpen(newState);
+                    window.dispatchEvent(new CustomEvent('toggleMobileMenu', { detail: newState }));
+                  }}
+                  className="lg:hidden p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all duration-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+                
+                <div
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shadow-md flex-shrink-0"
+                  style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}
+                >
+                  <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                </div>
+                
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl md:text-2xl font-bold text-gray-800 truncate">Invoices</h1>
+                  <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 hidden sm:block truncate">Review and verify invoices from centers</p>
+                </div>
+              </div>
+
+              {/* Right: Notifications & Profile */}
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <StateNotificationBell />
+                
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center focus:outline-none"
+                  >
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-md hover:ring-2 hover:ring-blue-300 transition-all"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base hover:bg-blue-700 transition-all shadow-md">
+                        {getDisplayName()?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      ></div>
+                      
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                        <div className="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
+                          <h3 className="font-bold text-gray-800 text-base">
+                            Welcome, {getDisplayName() || "User"}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1 capitalize">State Admin</p>
+                        </div>
+
+                        <div className="py-2">
+                          <button
+                            onClick={() => {
+                              navigate('/state/account-settings');
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm text-gray-700">Account Settings</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem("token");
+                              navigate("/login");
+                              setIsProfileDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center px-4 py-3 text-left hover:bg-red-50 transition-colors border-t border-gray-200"
+                          >
+                            <svg className="w-5 h-5 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span className="text-sm text-gray-700 font-medium">Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
+          </div>
+        </nav>
+
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
+
+
 
             {/* Tabs */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
@@ -420,20 +634,16 @@ const InvoiceRequestsPage = () => {
                                 </td>
                                 <td className="px-4 py-4 text-sm">
                                   <div className="flex items-center space-x-2">
-                                    {invoice.pdf_url && (
-                                      <a
-                                        href={`${invoice.pdf_url}?t=${invoice.updated_at || invoice.created_at || Date.now()}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-xs font-medium"
-                                      >
-                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View PDF
-                                      </a>
-                                    )}
+                                    <button
+                                      onClick={() => handlePrintPreview(invoice)}
+                                      className="inline-flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-xs font-medium"
+                                    >
+                                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      View & Print
+                                    </button>
                                     {activeTab === "pending" && (
                                       <button
                                         onClick={() => handleVerify(invoice.invoice_id)}
@@ -542,6 +752,52 @@ const InvoiceRequestsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Print Preview Modal */}
+      {showPrintPreview && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-black bg-opacity-75 backdrop-blur-sm flex items-start justify-center p-4 sm:p-8">
+          <div className="relative bg-gray-100 rounded-2xl shadow-2xl max-w-5xl w-full mx-auto overflow-hidden">
+            {/* Modal Header - Non-printable */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 print:hidden">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Printer className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Invoice Print Preview</h3>
+                  <p className="text-sm text-gray-500">{invoiceToPrint?.invoice_number}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Invoice</span>
+                </button>
+                <button
+                  onClick={() => setShowPrintPreview(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content - Printable */}
+            <div className="p-4 sm:p-12 bg-gray-50 flex justify-center overflow-x-auto">
+              <div className="bg-white shadow-xl">
+                <InvoicePrintTemplate 
+                  invoice={invoiceToPrint} 
+                  items={printItems} 
+                  centerName={invoiceToPrint?.centers?.center_name || 'N/A'} 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

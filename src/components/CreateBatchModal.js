@@ -10,6 +10,7 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
     course_id: '',
     mode: '',
     type: '',
+    language: '',
     time_from: '',
     time_to: '',
     max_students: 10, 
@@ -417,7 +418,6 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                     {teachers
                       .filter((teacher) => {
                         const match = teacher.center_id === formData.center;
-                        console.log(`Teacher: ${teacher.teacher_name}, center_id: ${teacher.center_id}, match: ${match}`);
                         return match;
                       })
                       .map((teacher) => (
