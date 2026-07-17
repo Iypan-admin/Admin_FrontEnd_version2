@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .responsive-padding {
+    @apply p-4 sm:p-6 lg:p-8;
+  }
+}

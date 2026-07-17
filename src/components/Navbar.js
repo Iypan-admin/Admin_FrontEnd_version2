@@ -1,0 +1,2539 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate, useLocation, useParams } from "react-router-dom"; // Add useParams
+import { getCurrentUserProfile } from '../services/Api';
+
+const Navbar = ({ showCenterViewOptions, selectedCenter }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { batchId } = useParams(); // Get batchId from URL parameters
+  const token = localStorage.getItem("token");
+  const decodedToken = token ? JSON.parse(atob(token.split(".")[1])) : null;
+  let role = decodedToken?.role || null;
+  if (role === "franchise_manager") {
+    role = "franchise_master";
+  }
+  
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openSubmenu, setOpenSubmenu] = useState(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(null);
+  const [userFullName, setUserFullName] = useState(null);
+  
+  // Listen for mobile menu toggle events from other components
+  useEffect(() => {
+    const handleToggleMobileMenu = (event) => {
+      setIsMobileMenuOpen(event.detail);
+      // Dispatch state change event for other components
+      window.dispatchEvent(new CustomEvent('mobileMenuStateChange', { detail: event.detail }));
+    };
+    window.addEventListener('toggleMobileMenu', handleToggleMobileMenu);
+    return () => window.removeEventListener('toggleMobileMenu', handleToggleMobileMenu);
+  }, []);
+  
+  // Dispatch state change when menu state changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('mobileMenuStateChange', { detail: isMobileMenuOpen }));
+  }, [isMobileMenuOpen]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    // Load from localStorage for professional roles
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  // Save sidebar collapsed state and update CSS variable
+  useEffect(() => {
+    if (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master') {
+      localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.toString());
+      document.documentElement.style.setProperty('--sidebar-width', isSidebarCollapsed ? '6rem' : '16rem');
+      window.dispatchEvent(new Event('sidebarToggle'));
+    }
+  }, [isSidebarCollapsed, role]);
+  // Prioritize full_name from user table (userFullName), then token, then name
+  const userName = (userFullName && 
+                    userFullName !== null && 
+                    userFullName !== undefined && 
+                    String(userFullName).trim() !== '') 
+    ? userFullName
+    : (decodedToken?.full_name && 
+                    decodedToken.full_name !== null && 
+                    decodedToken.full_name !== undefined && 
+                    String(decodedToken.full_name).trim() !== '') 
+    ? decodedToken.full_name 
+    : (decodedToken?.name || null);
+
+  // Fetch user profile picture and full name
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const profile = await getCurrentUserProfile();
+        if (profile && profile.data) {
+          if (profile.data.profile_picture) {
+            setProfilePictureUrl(profile.data.profile_picture);
+          }
+          if (profile.data.full_name) {
+            setUserFullName(profile.data.full_name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      }
+    };
+    
+    if (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master') {
+      fetchProfile();
+    }
+    
+    // Listen for profile update events
+    const handleProfileUpdate = () => {
+      fetchProfile();
+    };
+    window.addEventListener('profileUpdated', handleProfileUpdate);
+    
+    return () => {
+      window.removeEventListener('profileUpdated', handleProfileUpdate);
+    };
+  }, [role]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    window.dispatchEvent(new Event('storage'));
+    navigate("/");
+  };
+
+  const isActivePath = useCallback((path) => location.pathname === path, [location.pathname]);
+
+  const toggleSubmenu = (itemName) => {
+    setOpenSubmenu(openSubmenu === itemName ? null : itemName);
+  };
+
+  const isSubmenuActive = useCallback((submenu) => {
+    return submenu?.some(subItem => isActivePath(subItem.path));
+  }, [isActivePath]);
+
+  // Navigation items with icons
+  const getNavItems = useCallback(() => {
+    const items = {
+      admin: [
+        {
+          path: "/admin",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-users",
+          name: "Manage Users",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          ),
+        },
+        /* {
+          path: "/manage-states",
+          name: "Manage Centre Mode",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          ),
+        }, */
+        {
+          path: "/manage-centers",
+          name: "Manage Centers",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/batch-approval",
+          name: "Batch Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: null, // Parent menu with submenu
+          name: "Center Leads",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+          hasSubmenu: true,
+          submenu: [
+            {
+              path: "/all-leads",
+              name: "All Leads",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/demo-management",
+              name: "Demo Schedule",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/live-class",
+          name: "Live Classes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/students",
+          name: "All Students",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/admin/invoice-approval",
+          name: "Invoice Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/elite-pass",
+          name: "Elite Pass",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+              />
+            </svg>
+          ),
+        },
+      ],
+      franchise_master: [
+        {
+          path: "/franchise-master",
+          name: "Dashboard",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-centers",
+          name: "Centre Management",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+          ),
+        },
+        {
+          path: "/students",
+          name: "Student Management",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-users?filter=tutor",
+          name: "Tutor Management",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-users?filter=employee",
+          name: "Employee Management",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ),
+        },
+        {
+          path: "/center-request-approval",
+          name: "Centre Requests",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
+        {
+          path: "/franchise-master/account-settings",
+          name: "Settings",
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          ),
+        }
+      ],
+      manager: [
+        {
+          path: "/manager",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manager/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-users",
+          name: "Manage User",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
+        /* {
+          path: "/manage-states",
+          name: "Manage State",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          ),
+        }, */
+        {
+          name: "Manage Centers",
+          hasSubmenu: true,
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+              />
+            </svg>
+          ),
+          submenu: [
+            {
+              path: "/manage-centers",
+              name: "View Center",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              ),
+            },
+            {
+              path: "/center-request-approval",
+              name: "Center Request",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          name: "Manage Course",
+          hasSubmenu: true,
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              />
+            </svg>
+          ),
+          submenu: [
+            {
+              path: "/manage-courses",
+              name: "Courses",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              ),
+            },
+            {
+              path: "/course-fees",
+              name: "Course Fees",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/batch-approval",
+          name: "Batch Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/students",
+          name: "Manage Student",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manager/invoice-approval",
+          name: "Invoice Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          name: "Center Leads",
+          hasSubmenu: true,
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+          submenu: [
+            {
+              path: "/all-leads",
+              name: "All Centre Leads",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ),
+            },
+            {
+              path: "/demo-management",
+              name: "Lead Demo Schedule",
+              icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/live-class",
+          name: "Live classes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+      ],
+      financial: [
+        {
+          path: "/finance-admin",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/finance/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/approve-students",
+          name: "Student Fees Payment Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/approve-card",
+          name: "Elite Pass Payment Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/approve-Giveaway",
+          name: "Elite Pass Giveaway Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/finance-admin/invoice-approval",
+          name: "Invoice Approval",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          ),
+        },
+      ],
+      academic: [
+        {
+          path: "/academic",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-teachers",
+          name: "Manage Teachers",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/manage-students",
+          name: "Manage Students",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/academic/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+            {
+          path: null, // Parent menu with submenu
+          name: "View Batches",
+              icon: (
+                <svg
+              className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              ),
+          hasSubmenu: true,
+          submenu: [
+            {
+              path: "/manage-batches",
+              name: "Manage Batches",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/academic/batch-requests",
+              name: "Batch Requests",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: null, // Parent menu with submenu
+          name: "Center Leads",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+          hasSubmenu: true,
+          submenu: [
+            {
+              path: "/all-leads",
+              name: "All Leads",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/demo-management",
+              name: "Demo Schedule",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/live-class",
+          name: "Live Classes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/academic/sub-tutor-requests",
+          name: "Sub-Tutor Requests",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7h12m0 0l-4-4m4 4l-4 4M4 17h12m0 0l-4-4m4 4l-4 4"
+              />
+            </svg>
+          ),
+        },
+      ],
+      teacher: (() => {
+        const isOnBatchPage = location.pathname.includes("/teacher/batch/");
+        
+        // When on a batch page, show only specific menus
+        if (isOnBatchPage) {
+          return [
+        {
+              path: "/teacher",
+              name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/teacher/classes",
+          name: "Your Classes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
+            </svg>
+          ),
+        },
+        {
+              path: `/teacher/batch/${batchId}/take-class`,
+              name: "Take Class",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+              path: `/teacher/batch/${batchId}/notes`,
+              name: "Notes",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          ),
+        },
+              {
+              path: `/teacher/batch/${batchId}/chats`,
+              name: "Chat",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                ),
+              },
+              {
+              path: `/teacher/batch/${batchId}/attendance`,
+              name: "Attendance",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                    />
+                  </svg>
+                ),
+              },
+              {
+              path: `/teacher/batch/${batchId}/lsrw`,
+              name: "LSRW",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                    />
+                  </svg>
+                ),
+              },
+              {
+              path: `/teacher/batch/${batchId}/assessment-marks`,
+              name: "Assessment",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                    />
+                  </svg>
+                ),
+              },
+              {
+              path: `/teacher/batch/${batchId}/details`,
+              name: "Batch Details",
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                ),
+              },
+          ];
+        }
+        
+        // Default menu when NOT on a batch page
+        return [
+          {
+            path: "/teacher",
+            name: "Dashboard",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                />
+              </svg>
+            ),
+          },
+          {
+            path: "/teacher/classes",
+            name: "Your Classes",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                />
+              </svg>
+            ),
+          },
+          {
+            path: "/teacher/event-calendar",
+            name: "Event Calendar",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+            ),
+          },
+          {
+            path: "/teacher/leave-requests",
+            name: "Leave / Sub Teacher",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+            ),
+          },
+          {
+            path: "/teacher/demo-classes",
+            name: "Demo Class",
+            icon: (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+            ),
+          },
+        ];
+      })(),
+      center: [
+        {
+          path: "/center-admin",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center-admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center-admin/teachers",
+          name: "View Teachers",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: null, // Parent menu with submenu
+          name: "Manage Students",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          ),
+          hasSubmenu: true,
+          submenu: [
+            {
+              path: "/center-admin/students",
+              name: "View Students",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/center-admin/referred-students",
+              name: "Referred Students",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                  />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/center-admin/batches",
+          name: "View Batches",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center/viewcenterelite",
+          name: "Link - Student & Elite Card",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 14l2-2 4 4m0 0l-4-4-2 2m5-8H5a2 2 0 00-2 2v12a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center/leads",
+          name: "Manage Leads",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M16 12a4 4 0 01-8 0m8 0a4 4 0 00-8 0m8 0v1a6 6 0 01-12 0v-1m12 0V9a6 6 0 00-12 0v3"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/center-admin/finance",
+          name: "Invoice Request",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+      ],
+      state: [
+        {
+          path: "/state-admin",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/state-admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+
+        {
+          path: "/state-admin/center-requests",
+          name: "Center Requests",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m-6-8h6M5 6h14M5 18h14"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/state-admin/batch-requests",
+          name: "Batch Requests",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/state-admin/invoice-requests",
+          name: "Invoice Requests",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          ),
+        },
+
+        {
+          path: "/state-admin/centers",
+          name: "Centers Overview",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+              />
+            </svg>
+          ),
+        },
+        // Only show these items when a center is selected
+        ...(showCenterViewOptions && selectedCenter
+          ? [
+              {
+                path: `/state-admin/center/${selectedCenter.center_id}/students`,
+                name: `${selectedCenter.center_name} - Students`,
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                    />
+                  </svg>
+                ),
+              },
+              {
+                path: `/state-admin/center/${selectedCenter.center_id}/teachers`,
+                name: `${selectedCenter.center_name} - Teachers`,
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
+                ),
+              },
+              {
+                path: `/state-admin/center/${selectedCenter.center_id}/batches`,
+                name: `${selectedCenter.center_name} - Batches`,
+                icon: (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                    />
+                  </svg>
+                ),
+              },
+            ]
+          : []),
+      ],
+      cardadmin: [
+        {
+          path: "/card-admin",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/card-admin/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/influencer-onboarding",
+          name: "Influencer Board",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/activate-card",
+          name: "Activate Card",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 12l2 2 4-4"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/elite-card-payments",
+          name: "Generate card",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2s2-.9 2-2v-8c0-1.1-.9-2-2-2zM6 8c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2s2-.9 2-2v-8c0-1.1-.9-2-2-2zM18 8c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2s2-.9 2-2v-8c0-1.1-.9-2-2-2z"
+              />
+            </svg>
+          ),
+        },
+      ],
+      resource_manager: [
+        {
+          path: "/resource-manager",
+          name: "Dashboard",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 12l9-9 9 9v8a2 2 0 01-2 2h-4a2 2 0 01-2-2v-4H9v4a2 2 0 01-2 2H3v-8z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: "/resource-manager/event-calendar",
+          name: "Event Calendar",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          ),
+        },
+        {
+          path: null, // Parent menu with submenu
+          name: "Resource Upload",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+          ),
+          hasSubmenu: true,
+          submenu: [
+            {
+              path: "/lsrw-upload/listening",
+              name: "Listening",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/lsrw-upload/speaking",
+              name: "Speaking",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/lsrw-upload/reading",
+              name: "Reading",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
+                </svg>
+              ),
+            },
+            {
+              path: "/lsrw-upload/writing",
+              name: "Writing",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
+                </svg>
+              ),
+            },
+          ],
+        },
+        {
+          path: "/lsrw-file-view",
+          name: "Manage Resource",
+          icon: (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
+          ),
+        },
+      ],
+    };
+
+    return items[role] || [];
+  }, [role, selectedCenter, location.pathname, batchId, showCenterViewOptions]);
+
+  // Auto-open submenu if on a submenu page
+  useEffect(() => {
+    const navItems = getNavItems();
+    for (const item of navItems) {
+      if (item.hasSubmenu && isSubmenuActive(item.submenu)) {
+        setOpenSubmenu(item.name);
+        break;
+      }
+    }
+  }, [location.pathname, getNavItems, isSubmenuActive]);
+
+  return (
+    <>
+      {/* Mobile Menu Overlay - Lower z-index for teacher and academic roles so sidebar appears above */}
+      {isMobileMenuOpen && (
+        <div
+          className={`fixed inset-0 bg-black bg-opacity-50 lg:hidden ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'z-[45]' : 'z-40'}`}
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+
+
+      {/* Enhanced Sidebar Navigation */}
+      <div className={`${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'fixed' : 'fixed'} inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'lg:translate-x-0' : 'lg:translate-x-0 lg:static lg:inset-0'} transition-all duration-300 ease-in-out
+        h-screen ${isSidebarCollapsed && (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master') ? 'w-24' : 'w-64'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? '' : '-mr-64'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master'
+          ? 'bg-white text-gray-800' 
+          : 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100'
+        } 
+          ? 'bg-white text-gray-800' 
+          : 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100'
+        } 
+        flex flex-col shadow-2xl ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'shadow-gray-200' : 'shadow-gray-900/50'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'z-[60]' : 'z-40'} border-r ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'border-gray-200' : 'border-gray-700/30'} backdrop-blur-sm`}
+      >
+        {/* Enhanced App Logo/Name - BERRY Style for Teacher, Academic Coordinator, and Manager */}
+        {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? (
+          <div className={`relative flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-6'} py-4 border-b border-gray-200 bg-white`}>
+            {!isSidebarCollapsed ? (
+              <>
+                <div className="flex items-center gap-3">
+                  {/* BERRY Style Logo */}
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xl font-bold text-gray-800">ISML</span>
+                    <p className="text-xs text-gray-500">{role === 'teacher' ? 'Teacher Portal' : role === 'academic' ? 'Academic Portal' : role === 'manager' ? 'Manager Portal' : role === 'admin' ? 'Admin Portal' : role === 'financial' ? 'Finance Portal' : role === 'state' ? 'State Admin Portal' : role === 'franchise_master' ? 'Franchise Manager Portal' : 'Staff Portal'}</p>
+
+                  </div>
+                </div>
+                {/* 3 Dot Toggle Button - BERRY Style */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                  className="p-2 rounded-lg transition-all duration-200"
+                  style={{ backgroundColor: '#e3f2fd' }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#bbdefb'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#e3f2fd'}
+                  title="Collapse sidebar"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#2196f3' }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Collapsed Logo and Expand Button - Same Row */}
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                {/* Expand Toggle Button - Same Row */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="ml-2 p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                  title="Expand sidebar"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )}
+            {/* Mobile Close Button - Removed to fix icon overlap */}
+          </div>
+        ) : (
+        <div className="relative flex items-center gap-4 px-6 py-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm">
+          {/* Background decoration */}
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-blue-500/5"></div>
+          
+          <div className="relative group">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 
+                          group-hover:shadow-xl group-hover:shadow-blue-500/40 transition-all duration-300
+                          group-hover:scale-110 group-hover:rotate-3">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            </div>
+            {/* Status indicator */}
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-green-400 to-green-500 rounded-full 
+                          border-2 border-gray-900 shadow-lg animate-pulse"></div>
+            {/* Glow effect */}
+            <div className="absolute inset-0 rounded-2xl bg-blue-500/20 blur-xl opacity-0 group-hover:opacity-100 
+                          transition-opacity duration-300"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 
+                           bg-clip-text text-transparent group-hover:from-blue-300 group-hover:via-blue-400 
+                           group-hover:to-blue-500 transition-all duration-300">
+              ISML Portal
+            </span>
+            <p className="text-sm text-gray-300 group-hover:text-gray-200 transition-colors duration-300">
+              Management System
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-400 font-medium">Online</span>
+            </div>
+          </div>
+
+          {/* Mobile Close Button - Removed to fix icon overlap */}
+        </div>
+        )}
+
+        {/* Enhanced Navigation Menu - BERRY Style for Teacher, Academic Coordinator, and Manager */}
+        <nav className={`flex-1 overflow-y-auto py-4 ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100' : 'scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'}`}>
+          {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? (
+            <div className={isSidebarCollapsed ? 'px-2' : 'px-3'}>
+              {/* Collapsed Icons Only - Single Column, Centered */}
+              {isSidebarCollapsed ? (
+                <ul className="flex flex-col items-center space-y-2">
+                  {getNavItems().map((item) => {
+                    const hasActiveSubmenu = item.hasSubmenu && isSubmenuActive(item.submenu);
+                    
+                    return (
+                      <li key={item.path || item.name} className="group relative w-full flex justify-center">
+                        {item.hasSubmenu ? (
+                          <button
+                            onClick={() => toggleSubmenu(item.name)}
+                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
+                              hasActiveSubmenu
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={hasActiveSubmenu ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${hasActiveSubmenu ? '' : 'text-gray-500'}`} style={hasActiveSubmenu ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                          </button>
+                        ) : (
+                          <Link
+                            to={item.path || '#'}
+                            className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
+                              isActivePath(item.path)
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={isActivePath(item.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${isActivePath(item.path) ? '' : 'text-gray-500'}`} style={isActivePath(item.path) ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                          </Link>
+                        )}
+                        {/* Tooltip */}
+                        <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
+                          {item.name}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <ul className="space-y-1">
+                  {getNavItems().map((item) => {
+                    const hasActiveSubmenu = item.hasSubmenu && isSubmenuActive(item.submenu);
+                    const isSubmenuOpen = openSubmenu === item.name;
+                    
+                    return (
+                      <li key={item.path || item.name}>
+                        {item.hasSubmenu ? (
+                          <div className={`${isSidebarCollapsed ? 'w-full' : ''}`}>
+                            <button
+                              onClick={() => toggleSubmenu(item.name)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                                hasActiveSubmenu
+                                  ? ''
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                              style={hasActiveSubmenu ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                            >
+                              <span className={`${hasActiveSubmenu ? '' : 'text-gray-500'}`} style={hasActiveSubmenu ? { color: '#2196f3' } : {}}>
+                                {item.icon}
+                              </span>
+                              <span className="text-sm font-medium flex-1 text-left">{item.name}</span>
+                              <svg className={`w-4 h-4 transition-transform duration-300 ${isSubmenuOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                            {/* Submenu */}
+                            <div className={`overflow-hidden transition-all duration-300 ${isSubmenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                              <ul className="mt-1 space-y-1 ml-4">
+                                {item.submenu?.map((subItem) => (
+                                  <li key={subItem.path}>
+                                    <Link
+                                      to={subItem.path}
+                                      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
+                                        isActivePath(subItem.path)
+                                          ? ''
+                                          : 'text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                      style={isActivePath(subItem.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                                    >
+                                      <span className={`${isActivePath(subItem.path) ? '' : 'text-gray-500'}`} style={isActivePath(subItem.path) ? { color: '#2196f3' } : {}}>
+                                        {subItem.icon}
+                                      </span>
+                                      <span className="text-sm font-medium">{subItem.name}</span>
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        ) : (
+                          <Link
+                            to={item.path || '#'}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                              isActivePath(item.path)
+                                ? ''
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                            style={isActivePath(item.path) ? { backgroundColor: '#e3f2fd', color: '#1565c0' } : {}}
+                          >
+                            <span className={`${isActivePath(item.path) ? '' : 'text-gray-500'}`} style={isActivePath(item.path) ? { color: '#2196f3' } : {}}>
+                              {item.icon}
+                            </span>
+                            <span className="text-sm font-medium">{item.name}</span>
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : (
+          <ul className="space-y-2 px-4">
+            {getNavItems().map((item, index) => {
+              const hasActiveSubmenu = isSubmenuActive(item.submenu);
+              const isSubmenuOpen = openSubmenu === item.name;
+              
+              return (
+                <li key={item.path || item.name} style={{ animationDelay: `${index * 50}ms` }}>
+                  {/* Parent menu item */}
+                  {item.hasSubmenu ? (
+                    <div>
+                      <button
+                        onClick={() => toggleSubmenu(item.name)}
+                        className={`w-full relative flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 group
+                          ${hasActiveSubmenu
+                            ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/40 transform scale-105'
+                            : 'text-gray-300 hover:bg-gradient-to-r hover:from-gray-800/60 hover:to-gray-700/60 hover:text-white hover:shadow-lg hover:shadow-gray-900/30 hover:transform hover:scale-105'
+                          }`}
+                      >
+                        {/* Active indicator */}
+                        {hasActiveSubmenu && (
+                          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-blue-400 to-blue-600 rounded-r-full"></div>
+                        )}
+                        
+                        {/* Icon container */}
+                        <div className={`relative p-2 rounded-lg transition-all duration-300 group-hover:scale-110
+                          ${hasActiveSubmenu 
+                            ? 'bg-white/20 shadow-lg' 
+                            : 'bg-gray-700/50 group-hover:bg-gray-600/50'
+                          }`}>
+                          <span className={`transition-all duration-300 ${hasActiveSubmenu ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}>
+                            {item.icon}
+                          </span>
+                          <div className={`absolute inset-0 rounded-lg bg-blue-500/20 blur-sm opacity-0 group-hover:opacity-100 
+                            transition-opacity duration-300 ${hasActiveSubmenu ? 'opacity-100' : ''}`}></div>
+                        </div>
+                        
+                        {/* Text */}
+                        <span className={`text-sm font-semibold transition-all duration-300 ${hasActiveSubmenu ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>
+                          {item.name}
+                        </span>
+                        
+                        {/* Dropdown arrow */}
+                        <div className={`ml-auto transition-transform duration-300 ${isSubmenuOpen ? 'rotate-90' : ''}`}>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                        
+                          <div className={`absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-blue-500/10 
+                          opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${hasActiveSubmenu ? 'opacity-100' : ''}`}></div>
+                      </button>
+                      
+                      {/* Submenu */}
+                      <div className={`overflow-hidden transition-all duration-300 ${isSubmenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                        <ul className="mt-2 space-y-1">
+                          {item.submenu?.map((subItem) => (
+                            <li key={subItem.path}>
+                              <Link
+                                to={subItem.path}
+                                className={`relative flex items-center gap-3 px-4 py-2.5 ml-4 rounded-lg transition-all duration-300 group
+                                  ${isActivePath(subItem.path)
+                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-500/30'
+                                    : 'text-gray-400 hover:bg-gradient-to-r hover:from-gray-800/40 hover:to-gray-700/40 hover:text-white'
+                                  }`}
+                              >
+                                {/* Active indicator for submenu */}
+                                {isActivePath(subItem.path) && (
+                                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-blue-300 to-blue-500 rounded-r-full"></div>
+                                )}
+                                
+                                {/* Icon */}
+                                <span className={`transition-all duration-300 ${isActivePath(subItem.path) ? 'text-white' : 'text-gray-500 group-hover:text-white'}`}>
+                                  {subItem.icon}
+                                </span>
+                                
+                                {/* Text */}
+                                <span className={`text-sm font-medium transition-all duration-300 ${isActivePath(subItem.path) ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}>
+                                  {subItem.name}
+                                </span>
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <Link
+                      to={item.path}
+                      className={`relative flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 group
+                        ${isActivePath(item.path) && !getNavItems().some(navItem => navItem.hasSubmenu && isSubmenuActive(navItem.submenu))
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/40 transform scale-105'
+                          : 'text-gray-300 hover:bg-gradient-to-r hover:from-gray-800/60 hover:to-gray-700/60 hover:text-white hover:shadow-lg hover:shadow-gray-900/30 hover:transform hover:scale-105'
+                        }`}
+                    >
+                      {/* Active indicator */}
+                      {isActivePath(item.path) && !getNavItems().some(navItem => navItem.hasSubmenu && isSubmenuActive(navItem.submenu)) && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-blue-400 to-blue-600 rounded-r-full"></div>
+                      )}
+                      
+                      {/* Icon container */}
+                      <div className={`relative p-2 rounded-lg transition-all duration-300 group-hover:scale-110
+                        ${isActivePath(item.path) 
+                          ? 'bg-white/20 shadow-lg' 
+                          : 'bg-gray-700/50 group-hover:bg-gray-600/50'
+                        }`}>
+                        <span className={`transition-all duration-300 ${isActivePath(item.path) ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}>
+                          {item.icon}
+                        </span>
+                        <div className={`absolute inset-0 rounded-lg bg-blue-500/20 blur-sm opacity-0 group-hover:opacity-100 
+                          transition-opacity duration-300 ${isActivePath(item.path) ? 'opacity-100' : ''}`}></div>
+                      </div>
+                      
+                      {/* Text */}
+                      <span className={`text-sm font-semibold transition-all duration-300 ${isActivePath(item.path) ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>
+                        {item.name}
+                      </span>
+                      
+                      {/* Hover arrow */}
+                      <div className={`ml-auto transition-all duration-300 ${isActivePath(item.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                      
+                      <div className={`absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 
+                        opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${isActivePath(item.path) ? 'opacity-100' : ''}`}></div>
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          )}
+        </nav>
+
+        {/* Compact User Profile & Logout */}
+        <div className={`border-t ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'border-gray-200' : 'border-gray-700/50'} ${isSidebarCollapsed && (role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master') ? 'p-2' : 'p-4'} ${role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? 'bg-white' : 'bg-gradient-to-r from-gray-900/40 to-gray-800/40 backdrop-blur-sm'}`}>
+          {role === 'teacher' || role === 'academic' || role === 'manager' || role === 'admin' || role === 'financial' || role === 'center' || role === 'state' || role === 'cardadmin' || role === 'resource_manager' || role === 'franchise_master' ? (
+            <>
+              {isSidebarCollapsed ? (
+                /* Collapsed User Profile - Icon Only */
+                <div className="flex flex-col items-center gap-2">
+                  <div className="relative">
+                    {profilePictureUrl ? (
+                      <img
+                        src={profilePictureUrl}
+                        alt="Profile"
+                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-md"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                        <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : role === 'manager' ? 'M' : role === 'admin' ? 'A' : 'T')}</span>
+                      </div>
+                    )}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
+                                  rounded-full border-2 border-white shadow-sm"></div>
+                  </div>
+                  
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-all duration-200"
+                    title="Logout"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* User Profile Section - BERRY Style */}
+                  <div className="flex items-center gap-3 mb-3 px-2">
+                    <div className="relative">
+                      {profilePictureUrl ? (
+                        <img
+                          src={profilePictureUrl}
+                          alt="Profile"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-md"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2)' }}>
+                          <span className="text-sm font-bold text-white">{userName?.[0]?.toUpperCase() || (role === 'academic' ? 'A' : role === 'manager' ? 'M' : role === 'admin' ? 'A' : 'T')}</span>
+                        </div>
+                      )}
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 
+                                    rounded-full border-2 border-white shadow-sm"></div>
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 truncate">
+                        {userName || (role === 'academic' ? 'Academic Coordinator' : role === 'manager' ? 'Manager' : role === 'admin' ? 'Administrator' : role === 'financial' ? 'Finance Admin' : role === 'state' ? 'State Admin' : 'Staff')}
+                      </p>
+                      <p className="text-xs text-gray-500 capitalize truncate">
+                        {role === 'academic' ? 'Academic Coordinator' : role === 'manager' ? 'Manager' : role === 'admin' ? 'Administrator' : role === 'financial' ? 'Finance Admin' : role === 'state' ? 'State Admin' : (role || 'teacher')}
+                      </p>
+
+                    </div>
+                  </div>
+                  
+                  {/* Logout Button - BERRY Style */}
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 
+                              hover:bg-gray-100 rounded-lg transition-all duration-200"
+                  >
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    <span>Logout</span>
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+          {/* User Profile Section */}
+          <div className="flex items-center gap-3 mb-3 px-2 group">
+            <div className="relative">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30 
+                            group-hover:shadow-xl group-hover:shadow-blue-500/40 transition-all duration-300
+                                group-hover:scale-110 group-hover:rotate-2" style={{ background: 'linear-gradient(to bottom right, #2196f3, #1976d2, #1565c0)' }}>
+                <span className="text-sm font-bold text-white">{role?.[0].toUpperCase()}</span>
+              </div>
+              {/* Online indicator */}
+              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-gradient-to-r from-green-400 to-green-500 
+                            rounded-full border border-gray-900 shadow-sm animate-pulse"></div>
+              {/* Glow effect */}
+              <div className="absolute inset-0 rounded-lg bg-blue-500/20 blur-md opacity-0 group-hover:opacity-100 
+                            transition-opacity duration-300"></div>
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate group-hover:text-blue-200 
+                          transition-colors duration-300">
+                {userName || 'User'}
+              </p>
+              <p className="text-xs text-gray-400 capitalize truncate">
+                {role ? `(${role})` : ''}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-xs text-green-400 font-medium">Online</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Compact Logout Button */}
+          <button
+            onClick={handleLogout}
+            className="w-full group/btn relative overflow-hidden flex items-center gap-2 px-3 py-2 
+                      text-xs font-medium text-red-400 hover:text-red-300 
+                      bg-gradient-to-r from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20
+                      rounded-lg transition-all duration-300 hover:shadow-md hover:shadow-red-500/20
+                      hover:transform hover:scale-105 active:scale-95 border border-red-500/20 hover:border-red-500/40"
+          >
+            {/* Background animation */}
+            <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-red-600/5 
+                          opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+            
+            {/* Icon */}
+            <div className="relative p-1.5 rounded-md bg-red-500/20 group-hover/btn:bg-red-500/30 
+                          transition-all duration-300 group-hover/btn:scale-110">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              {/* Icon glow */}
+              <div className="absolute inset-0 rounded-md bg-red-500/20 blur-sm opacity-0 
+                            group-hover/btn:opacity-100 transition-opacity duration-300"></div>
+            </div>
+            
+            {/* Text */}
+            <span className="relative z-10">Logout</span>
+            
+            {/* Hover arrow */}
+            <div className="ml-auto opacity-0 group-hover/btn:opacity-100 transition-all duration-300 
+                          group-hover/btn:translate-x-0.5">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </button>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Navbar;

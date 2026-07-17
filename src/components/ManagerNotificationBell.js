@@ -1,0 +1,340 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getManagerNotifications, markManagerNotificationAsRead } from '../services/Api';
+
+const ManagerNotificationBell = () => {
+  const navigate = useNavigate();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Format relative timestamp (e.g., "1h ago", "12hr ago", "1 day ago")
+  const getRelativeTime = (dateString) => {
+    const now = new Date();
+    const notificationDate = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - notificationDate.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return hours === 1 ? '1h ago' : `${hours}hr ago`;
+    }
+    if (diffInSeconds < 172800) return 'Yesterday';
+    const days = Math.floor(diffInSeconds / 86400);
+    return days === 1 ? '1 day ago' : `${days} days ago`;
+  };
+
+  // Check if notification is event-related
+  const isEventNotification = (notif) => {
+    const message = notif.message?.toLowerCase() || '';
+    const type = notif.type?.toLowerCase() || '';
+    
+    // Check if type includes event-related keywords
+    if (type.includes('event') || type.includes('calendar') || type.includes('meeting') || 
+        type.includes('exam') || type.includes('holiday') || type.includes('training') ||
+        type.includes('workshop') || type.includes('conference') || type.includes('batch')) {
+      return true;
+    }
+    
+    // Check if message includes event-related keywords
+    if (message.includes('event') || message.includes('calendar') || message.includes('meeting') ||
+        message.includes('exam') || message.includes('holiday') || message.includes('training') ||
+        message.includes('workshop') || message.includes('conference') || message.includes('schedule') ||
+        message.includes('batch') || message.includes('approval')) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  // Get avatar and color based on notification type (only for events)
+  const getNotificationAvatar = (notif) => {
+    const message = notif.message?.toLowerCase() || '';
+    const type = notif.type?.toLowerCase() || '';
+    
+    // Event type avatars
+    if (type.includes('meeting') || message.includes('meeting')) {
+      return {
+        bg: '#3b82f6', // Blue
+        icon: '👥',
+        text: 'M'
+      };
+    }
+    if (type.includes('exam') || message.includes('exam')) {
+      return {
+        bg: '#ef4444', // Red
+        icon: '📝',
+        text: 'E'
+      };
+    }
+    if (type.includes('holiday') || message.includes('holiday')) {
+      return {
+        bg: '#10b981', // Green
+        icon: '🎉',
+        text: 'H'
+      };
+    }
+    if (type.includes('training') || message.includes('training')) {
+      return {
+        bg: '#8b5cf6', // Purple
+        icon: '🎓',
+        text: 'T'
+      };
+    }
+    if (type.includes('workshop') || message.includes('workshop')) {
+      return {
+        bg: '#f59e0b', // Orange/Amber
+        icon: '🔧',
+        text: 'W'
+      };
+    }
+    if (type.includes('conference') || message.includes('conference')) {
+      return {
+        bg: '#6366f1', // Indigo
+        icon: '🎤',
+        text: 'C'
+      };
+    }
+    if (type.includes('batch') || message.includes('batch')) {
+      return {
+        bg: '#f59e0b', // Amber
+        icon: '📦',
+        text: 'B'
+      };
+    }
+    // Default event
+    return {
+      bg: '#6b7280', // Gray
+      icon: '📅',
+      text: 'E'
+    };
+  };
+
+  // Fetch notifications
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    
+    const fetchNotifications = async (isInitialLoad = false) => {
+      if (isInitialLoad) {
+        setLoading(true);
+      }
+      try {
+        const res = await getManagerNotifications(token);
+        if (res && res.success) {
+          // Filter: Only show unread event-related notifications
+          const unreadNotifications = (res.data || [])
+            .filter(n => !n.is_read && isEventNotification(n));
+          setNotifications(unreadNotifications);
+        }
+      } catch (err) {
+        // Silently handle errors - endpoint may not exist yet
+        // Only log if it's not a 404
+        if (!err.message?.includes('404') && !err.message?.includes('Not Found')) {
+          console.error("Failed to fetch manager notifications:", err);
+        }
+        // Set empty array on error
+        setNotifications([]);
+      } finally {
+        if (isInitialLoad) {
+          setLoading(false);
+        }
+      }
+    };
+
+    // Initial load
+    fetchNotifications(true);
+    
+    // Set up background polling for real-time updates every 5 seconds (no loading indicator)
+    const interval = setInterval(() => {
+      fetchNotifications(false);
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Mark notification as read and remove from list
+  const handleMarkAsRead = async (notificationId, e) => {
+    if (e) {
+      e.stopPropagation(); // Prevent triggering parent click
+    }
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    
+    try {
+      await markManagerNotificationAsRead(notificationId, token);
+      // Remove notification from list (hide it)
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    } catch (err) {
+      console.error("Failed to mark manager notification as read:", err);
+    }
+  };
+
+
+  // Count only unread notifications
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  return (
+    <div className="relative">
+      {/* Bell Icon Button */}
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        title="View Notifications"
+      >
+        <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        {unreadCount > 0 && (
+          <span className="absolute top-1 right-1 flex h-5 w-5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 items-center justify-center">
+              <span className="text-[10px] font-bold text-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            </span>
+          </span>
+        )}
+      </button>
+
+      {/* Dropdown */}
+      {showDropdown && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowDropdown(false)}
+          ></div>
+          <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+            {/* Header - Matching Image Design */}
+            <div className="px-4 py-3 border-b border-gray-200 bg-white">
+              <div className="flex items-center justify-between">
+                {/* Left: Title */}
+                <h3 className="text-base font-semibold text-gray-800">
+                  Notification
+                </h3>
+                
+                {/* Middle: Badge */}
+                {unreadCount > 0 && (
+                  <span className="text-xs font-medium px-3 py-1 rounded-full text-white" style={{ backgroundColor: '#3b82f6' }}>
+                    {unreadCount} New
+                  </span>
+                )}
+                
+                {/* Right: View All Button - Only show if there are notifications */}
+                {notifications.length > 0 && (
+                  <button 
+                    onClick={() => {
+                      setShowDropdown(false);
+                      navigate('/manager/notifications');
+                    }}
+                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xs font-medium"
+                    title="View All Notifications"
+                  >
+                    View All
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Notifications List */}
+            <div className="max-h-96 overflow-y-auto">
+              {loading ? (
+                <div className="p-8 text-center">
+                  <div className="inline-block w-8 h-8 border-4 rounded-full animate-spin" style={{ borderColor: '#e3f2fd', borderTopColor: '#2196f3' }}></div>
+                  <p className="mt-2 text-sm text-gray-500">Loading notifications...</p>
+                </div>
+              ) : notifications.length === 0 ? (
+                <div className="p-8 text-center">
+                  <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#e3f2fd' }}>
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#2196f3' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1">No notifications</h3>
+                  <p className="text-xs text-gray-500">You're all caught up!</p>
+                </div>
+              ) : (
+                <div>
+                  {notifications.map((notif) => {
+                    const avatar = getNotificationAvatar(notif);
+                    // Extract title and message from notification
+                    const fullMessage = notif.message || '';
+                    const messageParts = fullMessage.split('\n');
+                    const hasTitle = messageParts.length > 1;
+                    const title = hasTitle ? messageParts[0] : '';
+                    const message = hasTitle ? messageParts.slice(1).join(' ') : fullMessage;
+                    
+                    return (
+                      <div
+                        key={notif.id}
+                        className="px-4 py-3 border-b border-gray-100 transition-colors hover:bg-gray-50 relative group"
+                        onClick={() => {
+                          // Mark as read when clicked (all notifications in dropdown are unread)
+                          handleMarkAsRead(notif.id);
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Avatar - Circular with colored background */}
+                          <div 
+                            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-white font-semibold text-sm"
+                            style={{ backgroundColor: avatar.bg }}
+                          >
+                            {avatar.icon || avatar.text}
+                          </div>
+                          
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            {/* Title/Sender - Bold (always unread in dropdown) */}
+                            {title && (
+                              <p className="text-sm font-semibold mb-1 leading-tight break-words text-gray-900">
+                                {title}
+                              </p>
+                            )}
+                            
+                            {/* Message - Lighter text below title (always unread in dropdown) */}
+                            <p className="text-sm mb-1 leading-tight break-words text-gray-600">
+                              {message}
+                            </p>
+                            
+                            {/* Timestamp - Small gray text */}
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {getRelativeTime(notif.created_at)}
+                            </p>
+                          </div>
+                          
+                          {/* Right side: Unread dot (hidden on hover) or X icon (shown on hover) */}
+                          <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+                            {/* Unread Indicator - Blue Dot (always show since we only display unread) */}
+                            <div className="w-2 h-2 rounded-full group-hover:hidden" style={{ backgroundColor: '#2196f3' }}></div>
+                            
+                            {/* X Icon - Show on hover to mark as read */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent triggering parent click
+                                handleMarkAsRead(notif.id, e);
+                              }}
+                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors opacity-0 group-hover:opacity-100"
+                              title="Mark as read"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default ManagerNotificationBell;
+
