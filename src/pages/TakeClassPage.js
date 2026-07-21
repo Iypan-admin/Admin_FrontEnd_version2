@@ -108,46 +108,49 @@ function TakeClassPage() {
     fetchTutorInfo();
   }, []);
 
-  // Fetch batch details
-  useEffect(() => {
-    const fetchBatchDetails = async () => {
-    try {
-      const token = localStorage.getItem('token');
-        const response = await getBatchById(token, batchId);
-        if (response && response.success && response.data) {
-          setBatch(response.data);
-        }
-    } catch (error) {
-        console.error('Error fetching batch details:', error);
-    }
-  };
-    if (batchId) {
-      fetchBatchDetails();
-    }
-  }, [batchId]);
-
-  const fetchSessions = React.useCallback(async () => {
+  // Fetch batch details and sessions
+  const loadData = React.useCallback(async () => {
+    if (!batchId) return;
     try {
       setLoading(true);
+      setError(null);
       const token = localStorage.getItem('token');
-      const response = await getGMeetsByBatch(batchId, token);
+      if (!token) throw new Error('Authentication token not found');
 
-      // If batch has total_sessions, organize by session_number
-      if (batch && batch.total_sessions) {
+      // 1. Fetch batch details
+      let batchDetails = null;
+      try {
+        const batchResponse = await getBatchById(token, batchId);
+        if (batchResponse?.success && batchResponse?.data) {
+          batchDetails = batchResponse.data;
+        } else if (batchResponse?.batch_id) {
+          batchDetails = batchResponse;
+        }
+        if (batchDetails) {
+          setBatch(batchDetails);
+        }
+      } catch (err) {
+        console.error('Error fetching batch details:', err);
+      }
+
+      // 2. Fetch GMeets / Sessions
+      const response = await getGMeetsByBatch(batchId, token);
+      let sessionsData = Array.isArray(response) ? response : (response?.data || []);
+
+      if (batchDetails && batchDetails.total_sessions) {
         const sessionsMap = {};
-        // Initialize all sessions
-        for (let i = 1; i <= batch.total_sessions; i++) {
+        for (let i = 1; i <= batchDetails.total_sessions; i++) {
           sessionsMap[i] = null;
         }
-        // Fill in existing sessions
-        response.forEach(session => {
-          if (session.session_number) {
-            sessionsMap[session.session_number] = session;
-          }
-        });
-        // Convert to array
+        if (Array.isArray(sessionsData)) {
+          sessionsData.forEach(session => {
+            if (session.session_number) {
+              sessionsMap[session.session_number] = session;
+            }
+          });
+        }
         const sessionsArray = [];
-        for (let i = 1; i <= batch.total_sessions; i++) {
+        for (let i = 1; i <= batchDetails.total_sessions; i++) {
           sessionsArray.push({
             session_number: i,
             ...sessionsMap[i],
@@ -163,8 +166,7 @@ function TakeClassPage() {
         }
         setSessions(sessionsArray);
       } else {
-        // If no total_sessions, show all existing sessions in table format
-        const sortedSessions = response
+        const sortedSessions = (Array.isArray(sessionsData) ? sessionsData : [])
           .sort((a, b) => {
             if (a.session_number && b.session_number) {
               return a.session_number - b.session_number;
@@ -180,20 +182,19 @@ function TakeClassPage() {
           }));
         setSessions(sortedSessions);
       }
-      setError(null);
-    } catch (error) {
-      console.error('Error fetching sessions:', error);
+    } catch (err) {
+      console.error('Error loading sessions:', err);
       setError('Failed to load sessions');
     } finally {
       setLoading(false);
     }
-  }, [batchId, batch]);
+  }, [batchId]);
 
   useEffect(() => {
-    if (batch) {
-      fetchSessions();
-    }
-  }, [batch, fetchSessions]);
+    loadData();
+  }, [loadData]);
+
+  const fetchSessions = loadData;
 
   const handleSessionEdit = (sessionNumber) => {
     setEditingSession(sessionNumber);
