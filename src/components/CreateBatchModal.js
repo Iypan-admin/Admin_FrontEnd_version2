@@ -303,7 +303,7 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                     required
                   >
                     <option value="">Select Type</option>
-                    {[...new Set(courses.filter(c => c.language === formData.language).map(c => c.type))].map(type => (
+                    {[...new Set(courses.filter(c => c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim()).flatMap(c => [c.type, c.program]).filter(Boolean))].map(type => (
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
@@ -340,7 +340,7 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                         (c) =>
                           c.id === selectedId &&
                           c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim() &&
-                          c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() &&
+                          (c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() || c.program?.toLowerCase().trim() === formData.type?.toLowerCase().trim()) &&
                           c.mode?.toLowerCase().trim() === formData.mode?.toLowerCase().trim()
                       );
 
@@ -357,7 +357,7 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                       .filter(
                         (c) =>
                           c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim() &&
-                          c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() &&
+                          (c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() || c.program?.toLowerCase().trim() === formData.type?.toLowerCase().trim()) &&
                           c.mode?.toLowerCase().trim() === formData.mode?.toLowerCase().trim()
                       )
                       .map((course) => (
