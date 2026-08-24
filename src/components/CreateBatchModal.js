@@ -303,9 +303,31 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                     required
                   >
                     <option value="">Select Type</option>
-                    {[...new Set(courses.filter(c => c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim()).flatMap(c => [c.type, c.program]).filter(Boolean))].map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
+                    {(() => {
+                      const langCourses = courses.filter(
+                        (c) => c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim()
+                      );
+                      const typesAndPrograms = langCourses.flatMap((c) => [c.type, c.program]).filter(Boolean);
+                      // Standardize type categories into clean list
+                      const categorySet = new Set();
+                      typesAndPrograms.forEach((t) => {
+                        const trimmed = t.trim();
+                        if (trimmed.toLowerCase().includes('fast')) {
+                          categorySet.add('Fast Track');
+                        } else if (trimmed.toLowerCase().includes('immersion')) {
+                          categorySet.add('Immersion');
+                        } else if (trimmed.toLowerCase().includes('diploma') || trimmed.toLowerCase().includes('international')) {
+                          categorySet.add('International Diploma');
+                        } else {
+                          categorySet.add(trimmed);
+                        }
+                      });
+                      return Array.from(categorySet).map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ));
+                    })()}
                   </select>
                 </div>
               )}
@@ -336,15 +358,9 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                     value={formData.course_id}
                     onChange={(e) => {
                       const selectedId = e.target.value;
-                      const selectedCourse = courses.find(
-                        (c) =>
-                          c.id === selectedId &&
-                          c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim() &&
-                          (c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() || c.program?.toLowerCase().trim() === formData.type?.toLowerCase().trim()) &&
-                          c.mode?.toLowerCase().trim() === formData.mode?.toLowerCase().trim()
-                      );
+                      const selectedCourse = courses.find((c) => c.id === selectedId);
 
-                      setFormData(prev => ({
+                      setFormData((prev) => ({
                         ...prev,
                         course_id: selectedId,
                         duration: selectedCourse?.duration || 6
@@ -354,12 +370,29 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                   >
                     <option value="">Select Course</option>
                     {courses
-                      .filter(
-                        (c) =>
-                          c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim() &&
-                          (c.type?.toLowerCase().trim() === formData.type?.toLowerCase().trim() || c.program?.toLowerCase().trim() === formData.type?.toLowerCase().trim()) &&
-                          c.mode?.toLowerCase().trim() === formData.mode?.toLowerCase().trim()
-                      )
+                      .filter((c) => {
+                        const langMatch = c.language?.toLowerCase().trim() === formData.language?.toLowerCase().trim();
+                        const modeMatch = c.mode?.toLowerCase().trim() === formData.mode?.toLowerCase().trim();
+
+                        if (!langMatch || !modeMatch) return false;
+
+                        const selType = formData.type.toLowerCase();
+                        const cType = (c.type || '').toLowerCase();
+                        const cProg = (c.program || '').toLowerCase();
+                        const cName = (c.course_name || '').toLowerCase();
+
+                        if (selType.includes('fast')) {
+                          return cType.includes('fast') || cProg.includes('fast') || cName.includes('-f-') || cName.includes('fast');
+                        }
+                        if (selType.includes('immersion')) {
+                          return cProg.includes('immersion') || cType.includes('immersion') || cName.includes('-imm-');
+                        }
+                        if (selType.includes('diploma') || selType.includes('international')) {
+                          return cProg.includes('diploma') || cType.includes('diploma') || cName.includes('-id-');
+                        }
+
+                        return cType === selType || cProg === selType;
+                      })
                       .map((course) => (
                         <option key={course.id} value={course.id}>
                           {course.course_name}
