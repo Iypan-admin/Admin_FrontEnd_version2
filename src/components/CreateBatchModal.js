@@ -312,11 +312,15 @@ const CreateBatchModal = ({ onClose, onSubmit }) => {
                       const categorySet = new Set();
                       typesAndPrograms.forEach((t) => {
                         const trimmed = t.trim();
-                        if (trimmed.toLowerCase().includes('fast')) {
+                        const lower = trimmed.toLowerCase();
+                        if (lower.includes('master a language') || lower === 'master language' || lower.includes('master language')) {
+                          return; // Exclude 'Master a Language' and 'Master Language'
+                        }
+                        if (lower.includes('fast')) {
                           categorySet.add('Fast Track');
-                        } else if (trimmed.toLowerCase().includes('immersion')) {
+                        } else if (lower.includes('immersion')) {
                           categorySet.add('Immersion');
-                        } else if (trimmed.toLowerCase().includes('diploma') || trimmed.toLowerCase().includes('international')) {
+                        } else if (lower.includes('diploma') || lower.includes('international')) {
                           categorySet.add('International Diploma');
                         } else {
                           categorySet.add(trimmed);
