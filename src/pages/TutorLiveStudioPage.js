@@ -43,9 +43,8 @@ import {
   useLocalParticipant,
   useRemoteParticipants,
   useTracks,
-  useRoomContext
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import {
   startLiveClass,
   joinLiveClass,
@@ -77,6 +76,33 @@ const STROKE_WIDTHS = [
   { label: "Bold", width: 8, dotSize: 7 },
   { label: "Marker", width: 16, dotSize: 10 }
 ];
+
+// Helper to accurately resolve participant role from LiveKit metadata, identity, or names
+const getParticipantRole = (p) => {
+  if (!p) return "Student";
+  try {
+    if (p.metadata) {
+      const meta = typeof p.metadata === "string" ? JSON.parse(p.metadata) : p.metadata;
+      if (meta.roleLabel) return meta.roleLabel;
+      if (meta.role === "academic" || meta.isAcademic) return "Academic Manager";
+      if (meta.role === "admin" || meta.isAdmin) return "Administrator";
+      if (meta.role === "teacher" || meta.isTeacher) return "Instructor (Host)";
+      if (meta.role === "student") return "Student";
+    }
+  } catch (_) {}
+
+  const id = (p.identity || "").toLowerCase();
+  if (id.startsWith("academic_")) return "Academic Manager";
+  if (id.startsWith("admin_")) return "Administrator";
+  if (id.startsWith("tutor_") || id.startsWith("teacher_")) return "Instructor (Host)";
+
+  const name = (p.name || "").toLowerCase();
+  if (name.includes("academic") || name.includes("manager")) return "Academic Manager";
+  if (name.includes("admin")) return "Administrator";
+  if (name.includes("instructor") || name.includes("tutor")) return "Instructor (Host)";
+
+  return p.isHost ? "Instructor (Host)" : "Student";
+};
 
 // Inner Studio Component with room context
 const LiveStudioStage = ({
@@ -397,8 +423,55 @@ const LiveStudioStage = ({
   // Audio Pipeline Refs
   const audioDestRef = useRef(null);
   const masterGainRef = useRef(null);
+  const remoteGainRef = useRef(null);
   const directMicStreamRef = useRef(null);
   const micConnectedRef = useRef(false);
+  const remoteAudioNodesRef = useRef(new Map()); // trackKey -> { source, stream, track, participantId }
+
+  // Attach a remote participant audio track (Students & Academic Managers) to recording audio bus
+  const attachRemoteAudioTrack = (track, participant) => {
+    if (!track || !track.mediaStreamTrack || !audioContextRef.current || !remoteGainRef.current) {
+      return;
+    }
+    const trackKey = track.sid || track.mediaStreamTrack.id || `${participant?.identity}_audio`;
+    if (remoteAudioNodesRef.current.has(trackKey)) {
+      return;
+    }
+
+    try {
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+
+      const mediaStream = new MediaStream([track.mediaStreamTrack]);
+      const sourceNode = ctx.createMediaStreamSource(mediaStream);
+      sourceNode.connect(remoteGainRef.current);
+
+      remoteAudioNodesRef.current.set(trackKey, {
+        source: sourceNode,
+        stream: mediaStream,
+        track,
+        participantId: participant?.identity
+      });
+
+      console.log(`[AudioMixer] Connected attendee audio track [${trackKey}] (${participant?.name || participant?.identity}) to recording bus.`);
+    } catch (err) {
+      console.warn(`[AudioMixer] Failed to attach remote audio track:`, err.message);
+    }
+  };
+
+  const detachRemoteAudioTrack = (track, participant) => {
+    const trackKey = track?.sid || track?.mediaStreamTrack?.id || `${participant?.identity}_audio`;
+    const entry = remoteAudioNodesRef.current.get(trackKey);
+    if (entry) {
+      try {
+        entry.source.disconnect();
+      } catch (_) {}
+      remoteAudioNodesRef.current.delete(trackKey);
+      console.log(`[AudioMixer] Detached attendee audio track [${trackKey}].`);
+    }
+  };
 
   // 1. Initialize Web Audio Pipeline & Audio Destination Node (Guarantees Audio Track Exists)
   useEffect(() => {
@@ -415,11 +488,17 @@ const LiveStudioStage = ({
           const dest = ctx.createMediaStreamDestination();
           audioDestRef.current = dest;
 
-          // Master gain node
+          // Master gain node for Tutor microphone
           const gain = ctx.createGain();
           gain.gain.value = isMicrophoneEnabled ? 1.0 : 0.0;
           gain.connect(dest);
           masterGainRef.current = gain;
+
+          // Dedicated remote attendee audio mixer gain node (mixes student & manager speech into recording)
+          const remoteGain = ctx.createGain();
+          remoteGain.gain.value = 1.0;
+          remoteGain.connect(dest);
+          remoteGainRef.current = remoteGain;
 
           // Connect microphone directly via getUserMedia for pristine audio
           try {
@@ -464,8 +543,71 @@ const LiveStudioStage = ({
       if (directMicStreamRef.current) {
         directMicStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      remoteAudioNodesRef.current.forEach((val) => {
+        try {
+          val.source.disconnect();
+        } catch (_) {}
+      });
+      remoteAudioNodesRef.current.clear();
     };
   }, []);
+
+  // 1b. Real-time Remote Audio Pipeline (Student & Attendee Mics -> Recording Bus)
+  useEffect(() => {
+    if (!room) return;
+
+    const syncExistingTracks = () => {
+      try {
+        room.remoteParticipants.forEach((p) => {
+          p.trackPublications.forEach((pub) => {
+            if (pub.track && (pub.kind === Track.Kind.Audio || pub.track.kind === "audio")) {
+              attachRemoteAudioTrack(pub.track, p);
+            }
+          });
+        });
+      } catch (e) {
+        console.warn("[AudioMixer] Sync tracks note:", e.message);
+      }
+    };
+
+    syncExistingTracks();
+
+    const onTrackSubscribed = (track, publication, participant) => {
+      if (track.kind === Track.Kind.Audio || track.kind === "audio") {
+        attachRemoteAudioTrack(track, participant);
+      }
+    };
+
+    const onTrackUnsubscribed = (track, publication, participant) => {
+      if (track.kind === Track.Kind.Audio || track.kind === "audio") {
+        detachRemoteAudioTrack(track, participant);
+      }
+    };
+
+    const onParticipantDisconnected = (participant) => {
+      remoteAudioNodesRef.current.forEach((val, key) => {
+        if (val.participantId === participant.identity) {
+          try {
+            val.source.disconnect();
+          } catch (_) {}
+          remoteAudioNodesRef.current.delete(key);
+        }
+      });
+    };
+
+    room.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
+    room.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
+    room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
+
+    const syncInterval = setInterval(syncExistingTracks, 2000);
+
+    return () => {
+      clearInterval(syncInterval);
+      room.off(RoomEvent.TrackSubscribed, onTrackSubscribed);
+      room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
+      room.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
+    };
+  }, [room]);
 
   // Sync mic mute/unmute state with audio gain
   useEffect(() => {
@@ -1041,9 +1183,13 @@ const LiveStudioStage = ({
           avatarCenterX + avatarRadius,
           avatarCenterY + avatarRadius
         );
+        const isAcademic = (p.role || "").includes("Academic");
         if (p.isHost) {
           avGrad.addColorStop(0, "#2563eb");
           avGrad.addColorStop(1, "#1d4ed8");
+        } else if (isAcademic) {
+          avGrad.addColorStop(0, "#7c3aed");
+          avGrad.addColorStop(1, "#6b21a8");
         } else {
           avGrad.addColorStop(0, "#059669");
           avGrad.addColorStop(1, "#047857");
@@ -1056,7 +1202,7 @@ const LiveStudioStage = ({
         ctx.stroke();
 
         // Initial Letter
-        const initial = (p.name || (p.isHost ? "T" : "S"))[0]?.toUpperCase() || (p.isHost ? "T" : "S");
+        const initial = (p.name || (p.isHost ? "T" : (isAcademic ? "A" : "S")))[0]?.toUpperCase() || (p.isHost ? "T" : (isAcademic ? "A" : "S"));
         ctx.fillStyle = "#ffffff";
         const letterFontSize = Math.max(16, Math.round(avatarRadius * 0.9));
         ctx.font = `bold ${letterFontSize}px Inter, sans-serif`;
@@ -1071,12 +1217,12 @@ const LiveStudioStage = ({
         ctx.font = `bold ${nameFontSize}px Inter, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        const displayName = p.name || (p.isHost ? "Instructor" : "Student");
+        const displayName = p.name || (p.isHost ? "Instructor" : (isAcademic ? "Academic Manager" : "Student"));
         ctx.fillText(displayName, avatarCenterX, nameY);
 
         // Role Tag under Name
         const badgeY = nameY + Math.max(18, h * 0.07);
-        const roleText = p.role || (p.isHost ? "Instructor (Host)" : "Student");
+        const roleText = p.role || (p.isHost ? "Instructor (Host)" : (isAcademic ? "Academic Manager" : "Student"));
         const badgeFontSize = Math.max(10, Math.min(13, Math.round(nameFontSize * 0.7)));
         ctx.font = `600 ${badgeFontSize}px Inter, sans-serif`;
         const textWidth = ctx.measureText(roleText).width;
@@ -1084,13 +1230,17 @@ const LiveStudioStage = ({
         const badgeH = badgeFontSize + 10;
 
         drawRoundedRect(ctx, avatarCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 6);
-        ctx.fillStyle = p.isHost ? "rgba(37, 99, 235, 0.25)" : "rgba(71, 85, 105, 0.3)";
+        ctx.fillStyle = isAcademic
+          ? "rgba(126, 34, 206, 0.35)"
+          : (p.isHost ? "rgba(37, 99, 235, 0.25)" : "rgba(71, 85, 105, 0.3)");
         ctx.fill();
-        ctx.strokeStyle = p.isHost ? "rgba(59, 130, 246, 0.6)" : "rgba(148, 163, 184, 0.4)";
+        ctx.strokeStyle = isAcademic
+          ? "rgba(192, 132, 252, 0.8)"
+          : (p.isHost ? "rgba(59, 130, 246, 0.6)" : "rgba(148, 163, 184, 0.4)");
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        ctx.fillStyle = p.isHost ? "#93c5fd" : "#cbd5e1";
+        ctx.fillStyle = isAcademic ? "#f3e8ff" : (p.isHost ? "#93c5fd" : "#cbd5e1");
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(roleText, avatarCenterX, badgeY);
@@ -1120,7 +1270,10 @@ const LiveStudioStage = ({
       const pillX = x + 10;
       const pillFontSize = Math.max(10, Math.min(12, Math.round(w * 0.03)));
       ctx.font = `500 ${pillFontSize}px Inter, sans-serif`;
-      const pillLabel = `${p.name || (p.isHost ? "Instructor" : "Student")} ${p.isHost ? "(Host)" : ""}`;
+      const pillIsAcademic = (p.role || "").includes("Academic");
+      const pillLabel = p.isHost
+        ? `${p.name || "Instructor"} (Host)`
+        : (pillIsAcademic ? `${p.name || "Academic Manager"} (Academic Manager)` : `${p.name || "Student"}`);
       const pillTextW = ctx.measureText(pillLabel).width;
       const pillW = pillTextW + (p.isSpeaking ? 50 : 32);
 
@@ -1324,11 +1477,12 @@ const LiveStudioStage = ({
           const isHandRaised = !!raisedHands[p.identity];
           const rEl = remoteVideoElsRef.current[p.identity];
           const isCamOn = !!(p.isCameraEnabled || tracks.some((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera && !t.publication?.isMuted));
+          const pRole = getParticipantRole(p);
           return {
             identity: p.identity,
-            name: p.name || "Student",
-            role: "Student",
-            isHost: false,
+            name: p.name || (pRole === "Academic Manager" ? "Academic Manager" : "Student"),
+            role: pRole,
+            isHost: pRole === "Instructor (Host)",
             isSpeaking: p.isSpeaking,
             isHandRaised: isHandRaised,
             isCameraEnabled: isCamOn,
@@ -2079,14 +2233,31 @@ const LiveStudioStage = ({
                       <VideoTrack trackRef={pTrack} className="w-full h-full object-cover" />
                     ) : (
                       <div className="text-center p-4">
-                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-800 text-slate-300 text-lg sm:text-xl font-bold flex items-center justify-center mx-auto mb-2 border border-slate-700">
-                          {(p.name || "S")[0]}
+                        <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full text-lg sm:text-xl font-bold flex items-center justify-center mx-auto mb-2 border ${
+                          getParticipantRole(p) === "Academic Manager"
+                            ? "bg-purple-950/80 border-purple-500/80 text-purple-200 shadow-lg shadow-purple-950/50"
+                            : "bg-slate-800 border-slate-700 text-slate-300"
+                        }`}>
+                          {(p.name || (getParticipantRole(p) === "Academic Manager" ? "A" : "S"))[0]}
                         </div>
-                        <p className="text-xs font-semibold text-slate-300">{p.name || "Student"}</p>
+                        <p className="text-xs font-semibold text-slate-200">{p.name || getParticipantRole(p)}</p>
+                        <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                          getParticipantRole(p) === "Academic Manager"
+                            ? "bg-purple-950/80 border-purple-600/70 text-purple-300"
+                            : "bg-slate-800/80 border-slate-700 text-slate-400"
+                        }`}>
+                          {getParticipantRole(p)}
+                        </span>
                       </div>
                     )}
-                    <div className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 bg-black/60 backdrop-blur-md px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium">
-                      {p.name || "Student"}
+                    <div className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 bg-black/60 backdrop-blur-md px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${p.isSpeaking ? "bg-emerald-400 animate-ping" : "bg-emerald-500"}`} />
+                      <span className="text-white">{p.name || getParticipantRole(p)}</span>
+                      {getParticipantRole(p) === "Academic Manager" && (
+                        <span className="text-purple-300 font-bold text-[9px] px-1.5 py-0.2 bg-purple-950/90 rounded border border-purple-600/70">
+                          Academic Manager
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -2130,7 +2301,12 @@ const LiveStudioStage = ({
                     >
                       <div className="flex-1 min-w-0 pr-2">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-semibold text-slate-200 truncate">{p.name || "Student"}</p>
+                          <p className="text-xs font-semibold text-slate-200 truncate">{p.name || getParticipantRole(p)}</p>
+                          {getParticipantRole(p) === "Academic Manager" && (
+                            <span className="px-1.5 py-0.2 bg-purple-950/90 text-purple-300 border border-purple-600/70 text-[9px] font-bold rounded shrink-0">
+                              Academic Manager
+                            </span>
+                          )}
                           {hasHandRaised && (
                             <span className="px-1.5 py-0.2 bg-amber-500 text-black text-[9px] font-bold rounded flex items-center gap-0.5 animate-pulse shrink-0">
                               <span>✋</span>
@@ -2138,7 +2314,7 @@ const LiveStudioStage = ({
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-400">Online</p>
+                        <p className="text-[10px] text-slate-400">{getParticipantRole(p)} • Online</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {hasHandRaised && (
