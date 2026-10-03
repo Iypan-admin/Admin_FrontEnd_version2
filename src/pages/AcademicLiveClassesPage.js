@@ -592,19 +592,19 @@ const AcademicLiveClassesPage = () => {
   const filteredClasses = classes.filter((c) => {
     const startMs = new Date(c.scheduled_start).getTime();
     const endMs = new Date(c.scheduled_end).getTime();
-    const isExpired = currentTimeMs > endMs;
-    const isInSlot = currentTimeMs >= startMs && !isExpired;
-    const isLive = (c.status === "LIVE" || isInSlot) && !isExpired;
-    const isUpcoming = c.status === "SCHEDULED" && currentTimeMs < startMs && !isExpired;
-    const isCompleted = c.status === "COMPLETED" || (isExpired && !isInSlot);
+    const isLive = c.status === "LIVE";
+    const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs + 60 * 60 * 1000;
+    const isExpired = !isLive && (c.status === "COMPLETED" || currentTimeMs > endMs + 60 * 60 * 1000);
+    const isUpcoming = c.status === "SCHEDULED" && currentTimeMs < startMs - 15 * 60 * 1000;
+    const isCompleted = c.status === "COMPLETED" && !isLive;
 
     let matchesStatus = true;
     if (statusFilter === "LIVE") {
-      matchesStatus = isLive;
+      matchesStatus = isLive || (c.status === "SCHEDULED" && isInSlot);
     } else if (statusFilter === "SCHEDULED") {
-      matchesStatus = isUpcoming;
+      matchesStatus = isUpcoming || (c.status === "SCHEDULED" && !isExpired);
     } else if (statusFilter === "COMPLETED") {
-      matchesStatus = isCompleted;
+      matchesStatus = isCompleted || isExpired;
     } else if (statusFilter === "CANCELLED") {
       matchesStatus = c.status === "CANCELLED";
     } else {
@@ -793,8 +793,9 @@ const AcademicLiveClassesPage = () => {
                   {filteredClasses.map((item) => {
                     const startMs = new Date(item.scheduled_start).getTime();
                     const endMs = new Date(item.scheduled_end).getTime();
-                    const isExpired = currentTimeMs > endMs;
-                    const isInSlot = currentTimeMs >= startMs && !isExpired;
+                    const isLive = item.status === "LIVE";
+                    const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs + 60 * 60 * 1000;
+                    const isExpired = !isLive && (item.status === "COMPLETED" || currentTimeMs > endMs + 60 * 60 * 1000);
 
                     return (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">

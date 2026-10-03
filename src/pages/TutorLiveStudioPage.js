@@ -45,7 +45,7 @@ import {
   useTracks,
   useRoomContext
 } from "@livekit/components-react";
-import { Track, RoomEvent } from "livekit-client";
+import { Track, RoomEvent, ParticipantEvent } from "livekit-client";
 import {
   startLiveClass,
   joinLiveClass,
@@ -113,6 +113,8 @@ const LiveStudioStage = ({
   roleTitle = "Tutor",
   hostBadge = "Instructor (Host)",
   userDisplayName = "",
+  returnDestination = "/teacher",
+  navigate,
   onEndClass
 }) => {
   const room = useRoomContext();
@@ -122,6 +124,7 @@ const LiveStudioStage = ({
     return (liveClass?.id && sessionStorage.getItem(`isml_active_tab_${liveClass.id}`)) || "stage";
   });
   const [showAttendees, setShowAttendees] = useState(false);
+  const [sessionEndedNotice, setSessionEndedNotice] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => {
     const saved = liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`);
     if (saved) {
@@ -147,6 +150,21 @@ const LiveStudioStage = ({
       return {};
     }
   });
+
+  // Compositor Loop State Refs (prevents re-render interval recreation and audio thread starvation)
+  const isSpeakingRef = useRef(false);
+  const raisedHandsRef = useRef(raisedHands);
+  raisedHandsRef.current = raisedHands;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const isCameraEnabledRef = useRef(isCameraEnabled);
+  isCameraEnabledRef.current = isCameraEnabled;
+  const remoteParticipantsRef = useRef(remoteParticipants);
+  remoteParticipantsRef.current = remoteParticipants;
+  const localParticipantRef = useRef(localParticipant);
+  localParticipantRef.current = localParticipant;
+  const liveClassRef = useRef(liveClass);
+  liveClassRef.current = liveClass;
 
   useEffect(() => {
     if (liveClass?.id) {
@@ -355,6 +373,10 @@ const LiveStudioStage = ({
 
   // All Video Tracks
   const tracks = useTracks([Track.Source.Camera]);
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const boardThemeRef = useRef(boardTheme);
+  boardThemeRef.current = boardTheme;
 
   // Manual or automatic session timer restart
   const handleRestartTimer = async () => {
@@ -421,12 +443,11 @@ const LiveStudioStage = ({
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Audio Pipeline Refs
+  // Audio Pipeline Refs (Native 48kHz, Zero Contention)
   const audioDestRef = useRef(null);
   const masterGainRef = useRef(null);
   const remoteGainRef = useRef(null);
-  const directMicStreamRef = useRef(null);
-  const micConnectedRef = useRef(false);
+  const localMicNodeRef = useRef(null);
   const remoteAudioNodesRef = useRef(new Map()); // trackKey -> { source, stream, track, participantId }
 
   // Attach a remote participant audio track (Students & Academic Managers) to recording audio bus
@@ -474,84 +495,97 @@ const LiveStudioStage = ({
     }
   };
 
-  // 1. Initialize Web Audio Pipeline & Audio Destination Node (Guarantees Audio Track Exists)
+  // 1. Initialize Web Audio Pipeline & Audio Destination Node (48kHz native, crystal-clear)
   useEffect(() => {
-    let isCancelled = false;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!audioContextRef.current) {
+        const ctx = new AudioContextClass({
+          sampleRate: 48000,
+          latencyHint: "interactive"
+        });
+        audioContextRef.current = ctx;
 
-    async function initAudioEngine() {
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!audioContextRef.current) {
-          const ctx = new AudioContextClass();
-          audioContextRef.current = ctx;
+        // Create permanent audio destination node for MediaRecorder
+        const dest = ctx.createMediaStreamDestination();
+        audioDestRef.current = dest;
 
-          // Create permanent audio destination node for MediaRecorder
-          const dest = ctx.createMediaStreamDestination();
-          audioDestRef.current = dest;
+        // Master gain node for Tutor microphone
+        const gain = ctx.createGain();
+        gain.gain.value = isMicrophoneEnabled ? 1.0 : 0.0;
+        gain.connect(dest);
+        masterGainRef.current = gain;
 
-          // Master gain node for Tutor microphone
-          const gain = ctx.createGain();
-          gain.gain.value = isMicrophoneEnabled ? 1.0 : 0.0;
-          gain.connect(dest);
-          masterGainRef.current = gain;
+        // Dedicated remote attendee audio mixer gain node (mixes student & manager speech into recording)
+        const remoteGain = ctx.createGain();
+        remoteGain.gain.value = 1.0;
+        remoteGain.connect(dest);
+        remoteGainRef.current = remoteGain;
 
-          // Dedicated remote attendee audio mixer gain node (mixes student & manager speech into recording)
-          const remoteGain = ctx.createGain();
-          remoteGain.gain.value = 1.0;
-          remoteGain.connect(dest);
-          remoteGainRef.current = remoteGain;
-
-          // Connect microphone directly via getUserMedia for pristine audio
-          try {
-            const micStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-                channelCount: 2
-              }
-            });
-
-            if (!isCancelled) {
-              // Ensure mic is muted/disabled by default until teacher turns it on
-              micStream.getAudioTracks().forEach((t) => {
-                t.enabled = false;
-              });
-              directMicStreamRef.current = micStream;
-              const micSource = ctx.createMediaStreamSource(micStream);
-              micSource.connect(gain);
-              gain.gain.value = 0.0;
-              micConnectedRef.current = true;
-              console.log("Direct Microphone pipeline connected (DEFAULT MUTED/OFF)");
-            }
-          } catch (micErr) {
-            console.warn("Direct microphone capture note:", micErr.message);
-          }
-        }
-
-        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-          await audioContextRef.current.resume();
-        }
-      } catch (e) {
-        console.warn("Audio engine setup note:", e.message);
+        console.log("[AudioEngine] Initialized 48kHz audio pipeline with zero-contention mixing");
       }
+
+      if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Audio engine setup note:", e.message);
     }
 
-    initAudioEngine();
-
     return () => {
-      isCancelled = true;
-      if (directMicStreamRef.current) {
-        directMicStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
       remoteAudioNodesRef.current.forEach((val) => {
         try {
           val.source.disconnect();
         } catch (_) {}
       });
       remoteAudioNodesRef.current.clear();
+      if (localMicNodeRef.current) {
+        try {
+          localMicNodeRef.current.source.disconnect();
+        } catch (_) {}
+        localMicNodeRef.current = null;
+      }
     };
   }, []);
+
+  // 1a. Link LiveKit local microphone track directly to master gain (Zero hardware contention!)
+  useEffect(() => {
+    if (!localParticipant || !audioContextRef.current || !masterGainRef.current) return;
+
+    const syncLocalMic = () => {
+      try {
+        const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
+        const mediaStreamTrack = micPub?.track?.mediaStreamTrack;
+
+        if (mediaStreamTrack) {
+          if (!localMicNodeRef.current || localMicNodeRef.current.trackId !== mediaStreamTrack.id) {
+            if (localMicNodeRef.current) {
+              try { localMicNodeRef.current.source.disconnect(); } catch (_) {}
+            }
+            const ctx = audioContextRef.current;
+            if (ctx.state === "suspended") ctx.resume().catch(() => {});
+            const stream = new MediaStream([mediaStreamTrack]);
+            const source = ctx.createMediaStreamSource(stream);
+            source.connect(masterGainRef.current);
+            localMicNodeRef.current = { source, trackId: mediaStreamTrack.id };
+            console.log("[AudioMixer] Connected LiveKit local mic track to master recording bus!");
+          }
+        }
+      } catch (err) {
+        console.warn("[AudioMixer] Local mic sync error:", err.message);
+      }
+    };
+
+    syncLocalMic();
+
+    localParticipant.on(ParticipantEvent.TrackPublished, syncLocalMic);
+    localParticipant.on(ParticipantEvent.TrackUnpublished, syncLocalMic);
+
+    return () => {
+      localParticipant.off(ParticipantEvent.TrackPublished, syncLocalMic);
+      localParticipant.off(ParticipantEvent.TrackUnpublished, syncLocalMic);
+    };
+  }, [localParticipant]);
 
   // 1b. Real-time Remote Audio Pipeline (Student & Attendee Mics -> Recording Bus)
   useEffect(() => {
@@ -617,11 +651,6 @@ const LiveStudioStage = ({
       masterGainRef.current.gain.setValueAtTime(isMicrophoneEnabled ? 1.0 : 0.0, now);
       console.log(`Audio recording mixer gain: ${isMicrophoneEnabled ? "1.0 (ACTIVE)" : "0.0 (MUTED)"}`);
     }
-    if (directMicStreamRef.current) {
-      directMicStreamRef.current.getAudioTracks().forEach((t) => {
-        t.enabled = isMicrophoneEnabled;
-      });
-    }
   }, [isMicrophoneEnabled]);
 
   // Audio Activity Detection for speaking animations
@@ -630,46 +659,29 @@ const LiveStudioStage = ({
 
     const handleSpeaking = (speaking) => {
       setIsSpeaking(speaking);
+      isSpeakingRef.current = speaking;
     };
     localParticipant.on("isSpeakingChanged", handleSpeaking);
 
-    let audioInterval = null;
-    try {
-      const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
-      const audioTrack = micPub?.track?.mediaStreamTrack;
-
-      if (audioTrack && isMicrophoneEnabled && audioContextRef.current) {
-        const source = audioContextRef.current.createMediaStreamSource(new MediaStream([audioTrack]));
-        const analyser = audioContextRef.current.createAnalyser();
-        analyser.fftSize = 64;
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        audioInterval = setInterval(() => {
-          analyser.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
-          const avg = sum / dataArray.length;
-          setIsSpeaking(avg > 14);
-        }, 120);
-      }
-    } catch (e) {
-      console.log("Audio analyser note:", e.message);
-    }
-
     return () => {
       localParticipant.off("isSpeakingChanged", handleSpeaking);
-      if (audioInterval) clearInterval(audioInterval);
     };
-  }, [localParticipant, isMicrophoneEnabled]);
+  }, [localParticipant]);
 
   // 2. Safe Media Toggle Handlers
 
   const handleToggleMicrophone = async () => {
     try {
-      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+      if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled, {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 48000,
+        channelCount: 1
+      });
     } catch (err) {
       console.warn("Microphone toggle note:", err.message);
     }
@@ -1451,9 +1463,9 @@ const LiveStudioStage = ({
       }
     });
 
-    const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
+    // Initialize 30fps Compositor Loop & MediaRecorder (Only Teacher / Host records)
+    if (isAcademic) return;
 
-    // Initialize 30fps Compositor Loop
     const compCanvas = compositorCanvasRef.current;
     if (!compCanvas) return;
     const cCtx = compCanvas.getContext("2d");
@@ -1463,21 +1475,28 @@ const LiveStudioStage = ({
     compTimerRef.current = setInterval(() => {
       const timeNow = Date.now();
 
-      // Assemble all participants (Tutor + Remote Students)
+      // Assemble all participants (Tutor + Remote Students) from stable refs
+      const currentLocal = localParticipantRef.current;
+      const currentRemotes = remoteParticipantsRef.current || [];
+      const currentRaised = raisedHandsRef.current || {};
+      const currentTracks = tracksRef.current || [];
+      const currentActiveTab = activeTabRef.current;
+      const currentBoardTheme = boardThemeRef.current;
+
       const allParticipants = [
         {
-          identity: localParticipant.identity,
-          name: localParticipant.name && localParticipant.name !== "Tutor" ? localParticipant.name : (userDisplayName || roleTitle),
+          identity: currentLocal?.identity || "tutor",
+          name: currentLocal?.name && currentLocal.name !== "Tutor" ? currentLocal.name : (userDisplayName || roleTitle),
           role: hostBadge || "Instructor (Host)",
           isHost: true,
-          isSpeaking: isSpeaking,
-          isCameraEnabled: isCameraEnabled,
+          isSpeaking: isSpeakingRef.current,
+          isCameraEnabled: isCameraEnabledRef.current,
           videoEl: cameraVideoElRef.current
         },
-        ...remoteParticipants.map((p) => {
-          const isHandRaised = !!raisedHands[p.identity];
+        ...currentRemotes.map((p) => {
+          const isHandRaised = !!currentRaised[p.identity];
           const rEl = remoteVideoElsRef.current[p.identity];
-          const isCamOn = !!(p.isCameraEnabled || tracks.some((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera && !t.publication?.isMuted));
+          const isCamOn = !!(p.isCameraEnabled || currentTracks.some((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera && !t.publication?.isMuted));
           const pRole = getParticipantRole(p);
           return {
             identity: p.identity,
@@ -1492,9 +1511,9 @@ const LiveStudioStage = ({
         })
       ];
 
-      if (activeTab === "whiteboard" && canvasRef.current) {
+      if (currentActiveTab === "whiteboard" && canvasRef.current) {
         // Mode A: Whiteboard Presentation Active
-        cCtx.fillStyle = boardTheme === "dark" ? "#090d16" : "#f8fafc";
+        cCtx.fillStyle = currentBoardTheme === "dark" ? "#090d16" : "#f8fafc";
         cCtx.fillRect(0, 0, 1280, 720);
 
         // Composite Whiteboard Canvas
@@ -1573,18 +1592,6 @@ const LiveStudioStage = ({
       }
     }, 1000 / 30); // 30 FPS steady composite
 
-    // Connect LiveKit microphone track to audio mixer as secondary redundant source if available
-    if (micTrack && audioContextRef.current && masterGainRef.current && !micConnectedRef.current) {
-      try {
-        const livekitMicSource = audioContextRef.current.createMediaStreamSource(new MediaStream([micTrack]));
-        livekitMicSource.connect(masterGainRef.current);
-        micConnectedRef.current = true;
-        console.log("LiveKit mic track linked to audio mixer!");
-      } catch (e) {
-        console.warn("LiveKit mic link note:", e.message);
-      }
-    }
-
     // Initialize MediaRecorder from Composite Canvas Stream + Clean Audio Destination
     if (!mediaRecorderRef.current && audioDestRef.current) {
       try {
@@ -1634,9 +1641,9 @@ const LiveStudioStage = ({
     return () => {
       if (compTimerRef.current) clearInterval(compTimerRef.current);
     };
-  }, [tracks, activeTab, isCameraEnabled, liveClass, localParticipant, remoteParticipants, boardTheme, isSpeaking, raisedHands, hostBadge, roleTitle, userDisplayName]);
+  }, [liveClass?.id, isAcademic]);
 
-  // Comprehensive Room Data Channel Listener (Chat, Hand Raise, Hand Lower)
+  // Comprehensive Room Data Channel Listener (Chat, Hand Raise, Hand Lower, Class Ended)
   useEffect(() => {
     if (!room) return;
 
@@ -1644,6 +1651,18 @@ const LiveStudioStage = ({
       try {
         const decoded = new TextDecoder().decode(payload);
         const data = JSON.parse(decoded);
+
+        if (data.type === "CLASS_ENDED") {
+          if (isAcademic) {
+            setSessionEndedNotice("The instructor has concluded this live class session.");
+            if (liveClass?.id) sessionStorage.removeItem(`isml_class_start_${liveClass.id}`);
+            setTimeout(() => {
+              if (navigate) navigate(returnDestination);
+              else window.location.href = returnDestination;
+            }, 1200);
+          }
+          return;
+        }
 
         if (data.type === "HAND_RAISE") {
           const studentId = data.studentId || participant?.identity || "student";
@@ -1674,13 +1693,69 @@ const LiveStudioStage = ({
     return () => {
       room.off("dataReceived", handleDataReceived);
     };
-  }, [room]);
+  }, [room, isAcademic, navigate, returnDestination, liveClass?.id]);
 
+  // Auto-exit Academic Manager when room disconnects
+  useEffect(() => {
+    if (!room || !isAcademic) return;
 
+    const handleRoomDisconnected = () => {
+      setSessionEndedNotice("The live class session has ended.");
+      if (liveClass?.id) sessionStorage.removeItem(`isml_class_start_${liveClass.id}`);
+      setTimeout(() => {
+        if (navigate) navigate(returnDestination);
+        else window.location.href = returnDestination;
+      }, 1200);
+    };
+
+    room.on(RoomEvent.Disconnected, handleRoomDisconnected);
+    return () => {
+      room.off(RoomEvent.Disconnected, handleRoomDisconnected);
+    };
+  }, [room, isAcademic, navigate, returnDestination, liveClass?.id]);
+
+  // Resilient status polling: Auto-exit Academic Manager if live class becomes COMPLETED
+  useEffect(() => {
+    if (!isAcademic || !liveClass?.id) return;
+
+    const pollClassStatus = async () => {
+      try {
+        const res = await getLiveClassById(liveClass.id);
+        if (res?.liveClass?.status === "COMPLETED" || res?.liveClass?.status === "CANCELLED") {
+          setSessionEndedNotice("Live class has been completed by the instructor.");
+          if (liveClass?.id) sessionStorage.removeItem(`isml_class_start_${liveClass.id}`);
+          setTimeout(() => {
+            if (navigate) navigate(returnDestination);
+            else window.location.href = returnDestination;
+          }, 1200);
+        }
+      } catch (_) {}
+    };
+
+    const statusInterval = setInterval(pollClassStatus, 4000);
+    return () => clearInterval(statusInterval);
+  }, [isAcademic, liveClass?.id, navigate, returnDestination]);
 
   // Safe End Class Trigger (Gathers Compositor Video and Hands Over)
   const handleConfirmEnd = async () => {
     setIsEnding(true);
+
+    // 1. Broadcast CLASS_ENDED to everyone in the room immediately
+    try {
+      const endNotice = JSON.stringify({
+        type: "CLASS_ENDED",
+        classId: liveClass?.id,
+        by: roleTitle,
+        message: "The instructor has ended the live class session."
+      });
+      if (room && room.state === "connected" && room.localParticipant) {
+        await room.localParticipant.publishData(
+          new TextEncoder().encode(endNotice),
+          { reliable: true }
+        );
+      }
+    } catch (_) {}
+
     let recordedBlob = null;
     if (compTimerRef.current) clearInterval(compTimerRef.current);
 
@@ -2663,6 +2738,34 @@ const LiveStudioStage = ({
           </div>
         </div>
       )}
+
+      {/* Automatic Auto-Exit Notification for Academic Manager / Inspector */}
+      {sessionEndedNotice && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 text-center shadow-2xl relative">
+            <div className="w-16 h-16 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-amber-400" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Class Session Concluded</h3>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
+              {sessionEndedNotice} Redirecting to your live classes schedule...
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-950/60 border border-amber-800/60 rounded-full text-amber-400 text-xs font-medium mb-4">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              Auto-redirecting...
+            </div>
+            <button
+              onClick={() => {
+                if (navigate) navigate(returnDestination);
+                else window.location.href = returnDestination;
+              }}
+              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg transition-all cursor-pointer"
+            >
+              Return to Schedule Now
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2701,6 +2804,23 @@ const TutorLiveStudioPage = () => {
     : (userRole === "admin" ? "Administrator (Inspector)" : "Instructor (Host)");
 
   const returnDestination = userRole === "teacher" ? "/teacher" : "/academic/live-classes";
+
+  const roomOptions = React.useMemo(() => ({
+    audioCaptureDefaults: {
+      autoGainControl: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+      sampleRate: 48000,
+      channelCount: 1
+    },
+    publishDefaults: {
+      audioPreset: {
+        maxBitrate: 64000
+      },
+      dtx: false,
+      red: true
+    }
+  }), []);
 
   useEffect(() => {
     initLiveSession();
@@ -2921,16 +3041,25 @@ const TutorLiveStudioPage = () => {
         token={token}
         serverUrl={wsUrl}
         connect={true}
+        options={roomOptions}
+        onDisconnected={() => {
+          if (userRole === "academic" || userRole === "admin") {
+            if (id) sessionStorage.removeItem(`isml_class_start_${id}`);
+            navigate(returnDestination);
+          }
+        }}
         data-lk-theme="default"
       >
         <RoomAudioRenderer />
         <LiveStudioStage
           liveClass={liveClass}
-          isTeacher={true}
+          isTeacher={userRole === "teacher"}
           userRole={userRole}
           roleTitle={roleTitle}
           hostBadge={hostBadge}
           userDisplayName={userDisplayName}
+          returnDestination={returnDestination}
+          navigate={navigate}
           onEndClass={handleEndClass}
         />
       </LiveKitRoom>
