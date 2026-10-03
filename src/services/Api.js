@@ -2685,11 +2685,12 @@ export const createBatch = async (token, batchDetails) => {
 // Get All Batches
 export const getBatches = async (token) => {
     try {
+        const authToken = token || localStorage.getItem("token");
         const response = await fetch(`${BATCHES_URL}/`, {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
+                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
             },
         });
 

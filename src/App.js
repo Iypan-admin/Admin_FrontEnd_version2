@@ -87,6 +87,10 @@ import FinanceEventCalendarPage from "./pages/FinanceEventCalendarPage";
 import CenterEventCalendarPage from "./pages/CenterEventCalendarPage";
 import ResourceEventCalendarPage from "./pages/ResourceEventCalendarPage";
 import CardAdminEventCalendarPage from "./pages/CardAdminEventCalendarPage";
+import AcademicLiveClassesPage from "./pages/AcademicLiveClassesPage";
+import TutorLiveStudioPage from "./pages/TutorLiveStudioPage";
+import AcademicRecordingsMasterPage from "./pages/AcademicRecordingsMasterPage";
+
 
 
 
@@ -166,10 +170,39 @@ function App() {
     return children;
   };
 
+  const getRoleDashboard = (userRole) => {
+    switch (userRole) {
+      case "admin": return "/admin";
+      case "teacher": return "/teacher";
+      case "academic": return "/academic";
+      case "manager": return "/manager";
+      case "financial": return "/finance-admin";
+      case "state": return "/state-admin";
+      case "center": return "/center-admin";
+      case "cardadmin": return "/card-admin";
+      case "resource_manager": return "/resource-manager";
+      case "franchise_master":
+      case "franchise_manager": return "/franchise-master";
+      default: return null;
+    }
+  };
+
+  const activeToken = localStorage.getItem("token");
+  const dashboardPath = role && activeToken ? getRoleDashboard(role) : null;
+
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<LoginPage setRole={setRole} />} />
+        <Route
+          path="/"
+          element={
+            dashboardPath ? (
+              <Navigate to={dashboardPath} replace />
+            ) : (
+              <LoginPage setRole={setRole} />
+            )
+          }
+        />
         <Route path="/verify-otp" element={<OtpVerifyPage setRole={setRole} />} />
         {role === "admin" && (
           <>
@@ -668,6 +701,31 @@ function App() {
               }
             />
             <Route
+              path="/academic/live-classes"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "academic", "teacher"]}>
+                  <AcademicLiveClassesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic/recordings"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "academic", "teacher"]}>
+                  <AcademicRecordingsMasterPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/live-studio/:id"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "academic", "teacher"]}>
+                  <TutorLiveStudioPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/event-management"
               element={
                 <ProtectedRoute allowedRole="academic">
@@ -962,6 +1020,39 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/teacher/live-classes"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <AcademicLiveClassesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic/live-classes"
+              element={<Navigate to="/teacher/live-classes" replace />}
+            />
+            <Route
+              path="/teacher/recordings"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <AcademicRecordingsMasterPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic/recordings"
+              element={<Navigate to="/teacher/recordings" replace />}
+            />
+            <Route
+              path="/live-studio/:id"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "academic", "teacher"]}>
+                  <TutorLiveStudioPage />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
               path="/teacher/batch/:batchId/attendance"
               element={

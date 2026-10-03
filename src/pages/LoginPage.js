@@ -29,6 +29,70 @@ const LoginPage = ({ setRole }) => {
     }
   };
 
+  // Auto-redirect if user already has an active, valid session
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      if (setRole) setRole(null);
+      return;
+    }
+
+    try {
+      const decoded = JSON.parse(atob(token.split(".")[1]));
+      const currentTime = Date.now() / 1000;
+      if (decoded.exp && decoded.exp < currentTime) {
+        localStorage.removeItem("token");
+        if (setRole) setRole(null);
+        return;
+      }
+
+      const userRole = (decoded.role || "").toLowerCase();
+      if (setRole) {
+        setRole(userRole === "franchise_manager" ? "franchise_master" : userRole);
+      }
+
+      switch (userRole) {
+        case "admin":
+          navigate("/admin", { replace: true });
+          break;
+        case "manager":
+          navigate("/manager", { replace: true });
+          break;
+        case "financial":
+          navigate("/finance-admin", { replace: true });
+          break;
+        case "academic":
+          navigate("/academic", { replace: true });
+          break;
+        case "state":
+          navigate("/state-admin", { replace: true });
+          break;
+        case "center":
+          navigate("/center-admin", { replace: true });
+          break;
+        case "teacher":
+          navigate("/teacher", { replace: true });
+          break;
+        case "cardadmin":
+          navigate("/card-admin", { replace: true });
+          break;
+        case "resource_manager":
+          navigate("/resource-manager", { replace: true });
+          break;
+        case "franchise_master":
+        case "franchise_manager":
+          navigate("/franchise-master", { replace: true });
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      console.warn("Session check error on login page:", e);
+      localStorage.removeItem("token");
+      if (setRole) setRole(null);
+    }
+  }, [navigate, setRole]);
+
   // Fetch events on component mount and set up auto-refresh
   useEffect(() => {
     fetchEvents();

@@ -128,7 +128,7 @@ function StateAdminPage() {
         } else if (error.message.includes("403") || error.message.includes("Forbidden")) {
           setError("Access denied. You don't have permission to view this page.");
         } else if (error.message.includes("404") || error.message.includes("Not Found")) {
-          setError("Service not available. Please check if all backend services are running.");
+          setError("Service temporarily unavailable. Please try again later.");
         } else {
           setError(`Failed to load dashboard statistics: ${error.message}`);
         }
@@ -334,9 +334,9 @@ function StateAdminPage() {
                       <h4 className="text-sm font-semibold text-red-800 mb-3">Debug Information:</h4>
                       <div className="text-sm text-red-700 space-y-2">
                         <p>• Check if you are logged in as a state admin user</p>
-                        <p>• Verify that your user account is assigned to a state in the database</p>
-                        <p>• Ensure all backend services (Listing Service:3008, Role Assignment:3002) are running</p>
-                        <p>• Check the browser console for detailed error messages</p>
+                        <p>• Verify that your user account is assigned to an active state</p>
+                        <p>• Ensure network connection is stable</p>
+                        <p>• Check if your session is active or try refreshing</p>
                       </div>
                       <div className="mt-4">
                         <button

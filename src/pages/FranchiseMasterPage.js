@@ -107,7 +107,7 @@ function FranchiseMasterPage() {
 
       } catch (err) {
         console.error("Error loading stats:", err);
-        setError("Failed to load dashboard statistics. Please verify backend services are running.");
+        setError("Failed to load dashboard statistics. Please try refreshing or check back later.");
       } finally {
         setLoading(false);
       }

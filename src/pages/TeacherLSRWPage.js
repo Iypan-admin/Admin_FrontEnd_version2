@@ -980,7 +980,7 @@ function TeacherLSRWPage() {
                           onClick={() => selectedBatch && fetchLSRWContent(selectedBatch.batch_id, activeTab)}
                           disabled={loadingLSRW}
                           className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Refresh to sync with Supabase storage"
+                          title="Refresh content"
                         >
                           <RefreshCw className={`w-4 h-4 ${loadingLSRW ? 'animate-spin' : ''}`} />
                           <span className="hidden sm:inline">Refresh</span>
@@ -1569,7 +1569,7 @@ function TeacherLSRWPage() {
                           onClick={() => selectedBatch && fetchLSRWContent(selectedBatch.batch_id, activeTab)}
                           disabled={loadingLSRW}
                           className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Refresh to sync with Supabase storage"
+                          title="Refresh content"
                         >
                           <RefreshCw className={`w-4 h-4 ${loadingLSRW ? 'animate-spin' : ''}`} />
                           <span className="hidden sm:inline">Refresh</span>
