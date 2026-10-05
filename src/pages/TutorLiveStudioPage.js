@@ -2891,8 +2891,13 @@ const TutorLiveStudioPage = () => {
         sessionStorage.removeItem(`isml_raised_hands_${id}`);
       }
 
-      // 3. Optional client video upload with 3.5s race timeout (server LiveKit egress is primary)
+      // 3. Client video upload (saves recorded WebM directly to Supabase storage)
       if (recordedBlob && recordedBlob.size > 2000) {
+        setEndStatus({
+          status: "saving",
+          title: "Saving Class Recording...",
+          message: "Uploading recorded lecture to storage for student archive..."
+        });
         try {
           const uploadPromise = async () => {
             const formData = new FormData();
@@ -2903,7 +2908,7 @@ const TutorLiveStudioPage = () => {
           };
           await Promise.race([
             uploadPromise(),
-            new Promise((resolve) => setTimeout(resolve, 3500))
+            new Promise((resolve) => setTimeout(resolve, 30000))
           ]);
         } catch (uploadErr) {
           console.warn("Client upload note:", uploadErr.message);

@@ -21,7 +21,8 @@ import {
   RotateCcw,
   RotateCw,
   AlertCircle,
-  Menu
+  Menu,
+  Radio
 } from "lucide-react";
 import { getAllRecordings, getRecordingStreamUrl, uploadRecordingVideo } from "../services/liveClassApi";
 import { getBatches } from "../services/Api";
@@ -112,6 +113,19 @@ const AcademicRecordingsMasterPage = () => {
   };
 
   const handlePlayRecording = async (rec) => {
+    const hasVideo = Boolean(rec.storage_object_path || rec.raw_egress_url || (rec.file_size_bytes && rec.file_size_bytes > 0));
+    const isRecording = rec.status === 'RECORDING' || rec.live_classes?.status === 'LIVE';
+
+    if (isRecording) {
+      alert("🔴 This class session is currently LIVE in progress. The video recording will be ready once the session ends.");
+      return;
+    }
+
+    if (!hasVideo) {
+      alert("⚠️ No video file is available for this session yet.\n\nPlease click the 'Upload Video' button on this card to attach an MP4 or WebM video file.");
+      return;
+    }
+
     setPlaybackLoading(true);
     setPlaybackError(null);
     try {
@@ -128,7 +142,7 @@ const AcademicRecordingsMasterPage = () => {
       });
     } catch (err) {
       console.error("Failed to load recording stream:", err);
-      alert("Failed to load recording video: " + (err.message || "Recording file not found"));
+      alert(err.message || "Failed to load recording video. Please verify the video file exists.");
     } finally {
       setPlaybackLoading(false);
     }
@@ -189,7 +203,7 @@ const AcademicRecordingsMasterPage = () => {
   };
 
   const formatDuration = (seconds) => {
-    if (!seconds) return "00:00";
+    if (!seconds || Number(seconds) <= 0) return null;
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}m ${s}s`;
@@ -321,99 +335,154 @@ const AcademicRecordingsMasterPage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col group"
-              >
-                {/* Thumbnail / Header Preview */}
-                <div className="h-44 bg-slate-900 relative flex items-center justify-center p-4">
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent z-10" />
+            {filtered.map((item) => {
+              const hasVideo = Boolean(item.storage_object_path || item.raw_egress_url || (item.file_size_bytes && item.file_size_bytes > 0));
+              const isRecording = item.status === 'RECORDING' || item.live_classes?.status === 'LIVE';
+              const durationText = formatDuration(item.duration_seconds);
 
-                  {/* Play Button Overlay */}
-                  <button
-                    onClick={() => handlePlayRecording(item)}
-                    className="w-12 h-12 rounded-full bg-purple-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-purple-600 transition-all z-20"
-                  >
-                    <Play className="w-5 h-5 ml-0.5" />
-                  </button>
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col group"
+                >
+                  {/* Thumbnail / Header Preview */}
+                  <div className="h-44 bg-slate-900 relative flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent z-10" />
 
-                  <div className="absolute top-3 left-3 z-20">
-                    <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-900/90 text-purple-300 border border-purple-500/30">
-                      Session #{item.live_classes?.session_number || 1}
-                    </span>
-                  </div>
-
-                  <div className="absolute bottom-3 left-3 right-3 z-20 flex justify-between items-center text-xs text-slate-300">
-                    <span className="font-semibold text-white truncate max-w-[200px]">
-                      {item.batches?.batch_name || "General Batch"}
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-black/60 font-mono text-[11px]">
-                      {formatDuration(item.duration_seconds)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-base line-clamp-1 mb-1">
-                      {item.live_classes?.title || "Untitled Lecture"}
-                    </h3>
-                    <p className="text-xs text-slate-500 line-clamp-1 mb-2.5">
-                      Tutor: {item.live_classes?.teachers?.full_name || item.live_classes?.teachers?.name || "Assigned Instructor"}
-                    </p>
-
-                    {item.live_classes?.description && (
-                      <div className="bg-purple-50/70 border border-purple-100/80 rounded-xl p-2.5 mb-3 text-left">
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-0.5">
-                          <BookOpen className="w-3 h-3 text-purple-600" />
-                          <span>Topics Covered</span>
+                    {/* Center Action Button / Status */}
+                    {isRecording ? (
+                      <div className="flex flex-col items-center gap-1.5 z-20">
+                        <div className="w-12 h-12 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg shadow-red-600/30 animate-pulse">
+                          <Radio className="w-5 h-5 text-white" />
                         </div>
-                        <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-medium">
-                          {item.live_classes.description}
-                        </p>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-red-300 bg-black/60 px-2 py-0.5 rounded">
+                          Class In Session
+                        </span>
                       </div>
-                    )}
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5" />
-                      <span>{item.storage_object_path ? formatFileSize(item.file_size_bytes) : "No Video File"}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleUploadClick(item)}
-                        disabled={uploadingId === item.id}
-                        className="text-xs font-semibold text-slate-600 hover:text-purple-600 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-purple-300 hover:bg-purple-50 transition-all cursor-pointer"
-                        title="Upload recorded video file for this class"
-                      >
-                        {uploadingId === item.id ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
-                            <span>Uploading Video...</span>
-                          </>
-                        ) : (
-                          <>
-                            <UploadCloud className="w-3.5 h-3.5 text-purple-600" />
-                            <span>{item.storage_object_path ? "Replace Video" : "Upload Video"}</span>
-                          </>
-                        )}
-                      </button>
-
+                    ) : hasVideo ? (
                       <button
                         onClick={() => handlePlayRecording(item)}
-                        className="text-xs font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer"
+                        className="w-12 h-12 rounded-full bg-purple-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-purple-600 transition-all z-20 cursor-pointer"
+                        title="Play Recording"
                       >
-                        Watch Replay →
+                        <Play className="w-5 h-5 ml-0.5 fill-white" />
                       </button>
+                    ) : (
+                      <button
+                        onClick={() => handleUploadClick(item)}
+                        className="w-12 h-12 rounded-full bg-slate-800/80 border border-slate-700 hover:border-purple-400 hover:bg-purple-600 text-slate-300 hover:text-white flex items-center justify-center transition-all z-20 cursor-pointer group/btn"
+                        title="Click to upload video for this session"
+                      >
+                        <UploadCloud className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                      </button>
+                    )}
+
+                    <div className="absolute top-3 left-3 z-20">
+                      <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-900/90 text-purple-300 border border-purple-500/30">
+                        Session #{item.live_classes?.session_number || 1}
+                      </span>
+                    </div>
+
+                    <div className="absolute bottom-3 left-3 right-3 z-20 flex justify-between items-center text-xs text-slate-300">
+                      <span className="font-semibold text-white truncate max-w-[180px]">
+                        {item.batches?.batch_name || "General Batch"}
+                      </span>
+                      {isRecording ? (
+                        <span className="px-2 py-0.5 rounded bg-red-600/90 text-white font-bold text-[10px] flex items-center gap-1 animate-pulse">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          LIVE NOW
+                        </span>
+                      ) : hasVideo && durationText ? (
+                        <span className="px-2 py-0.5 rounded bg-black/60 font-mono text-[11px] text-white">
+                          {durationText}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
+                          NO VIDEO
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base line-clamp-1 mb-1">
+                        {item.live_classes?.title || "Untitled Lecture"}
+                      </h3>
+                      <p className="text-xs text-slate-500 line-clamp-1 mb-2.5">
+                        Tutor: {item.live_classes?.teachers?.full_name || item.live_classes?.teachers?.name || "Assigned Instructor"}
+                      </p>
+
+                      {item.live_classes?.description && (
+                        <div className="bg-purple-50/70 border border-purple-100/80 rounded-xl p-2.5 mb-3 text-left">
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-0.5">
+                            <BookOpen className="w-3 h-3 text-purple-600" />
+                            <span>Topics Covered</span>
+                          </div>
+                          <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-medium">
+                            {item.live_classes.description}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <HardDrive className="w-3.5 h-3.5" />
+                        <span>{hasVideo ? formatFileSize(item.file_size_bytes) : "No Video File"}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleUploadClick(item)}
+                          disabled={uploadingId === item.id}
+                          className="text-xs font-semibold text-slate-600 hover:text-purple-600 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-purple-300 hover:bg-purple-50 transition-all cursor-pointer"
+                          title="Upload recorded video file for this class"
+                        >
+                          {uploadingId === item.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
+                              <span>Uploading Video...</span>
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud className="w-3.5 h-3.5 text-purple-600" />
+                              <span>{hasVideo ? "Replace Video" : "Upload Video"}</span>
+                            </>
+                          )}
+                        </button>
+
+                        {isRecording ? (
+                          <button
+                            onClick={() => navigate(isTeacher ? "/teacher/live-classes" : "/academic/live-classes")}
+                            className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg border border-red-200"
+                          >
+                            <Radio className="w-3.5 h-3.5 animate-pulse" />
+                            <span>Class Live</span>
+                          </button>
+                        ) : hasVideo ? (
+                          <button
+                            onClick={() => handlePlayRecording(item)}
+                            className="text-xs font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer"
+                          >
+                            Watch Replay →
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUploadClick(item)}
+                            className="text-xs font-semibold text-amber-600 hover:text-purple-600 flex items-center gap-1 cursor-pointer"
+                            title="Upload video file to enable playback"
+                          >
+                            Upload to Watch →
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -160,7 +160,10 @@ export const getRecordingStreamUrl = async (id) => {
     method: 'GET',
     headers: getHeaders()
   });
-  if (!response.ok) throw new Error('Failed to fetch recording stream URL');
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || 'Failed to fetch recording stream URL');
+  }
   return response.json();
 };
 
