@@ -1,5 +1,19 @@
-const LIVE_CLASSES_URL = process.env.REACT_APP_LIVE_CLASSES_API_URL || 'http://localhost:3005/api/live-classes';
-const RECORDINGS_URL = process.env.REACT_APP_RECORDINGS_API_URL || 'http://localhost:3005/api/recordings';
+// Dynamic endpoint resolution to prevent external devices from failing on localhost
+const isLocal = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const defaultAcademicBase = isLocal ? 'http://localhost:3005/api' : 'https://academicservice.iypan.com/api';
+const ACADEMIC_BASE = process.env.REACT_APP_ACADEMIC_API_URL || defaultAcademicBase;
+
+const resolveApiUrl = (envUrl, endpoint) => {
+  if (envUrl && (!envUrl.includes('localhost') || isLocal)) {
+    return envUrl;
+  }
+  return `${ACADEMIC_BASE}/${endpoint}`;
+};
+
+const LIVE_CLASSES_URL = resolveApiUrl(process.env.REACT_APP_LIVE_CLASSES_API_URL, 'live-classes');
+const RECORDINGS_URL = resolveApiUrl(process.env.REACT_APP_RECORDINGS_API_URL, 'recordings');
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');

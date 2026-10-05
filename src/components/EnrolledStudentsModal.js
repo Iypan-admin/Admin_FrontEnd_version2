@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LIST_API_URL } from '../services/Api';
 
 const EnrolledStudentsModal = ({ isOpen, onClose, batchId, batchName }) => {
   const [students, setStudents] = useState([]);
@@ -17,7 +18,8 @@ const EnrolledStudentsModal = ({ isOpen, onClose, batchId, batchName }) => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`http://localhost:3008/api/students/batch/${batchId}`, {
+      const baseUrl = LIST_API_URL || 'https://listingservice.iypan.com/api';
+      const response = await fetch(`${baseUrl}/students/batch/${batchId}`, {
         headers: {
           'Content-Type': 'application/json'
         }
