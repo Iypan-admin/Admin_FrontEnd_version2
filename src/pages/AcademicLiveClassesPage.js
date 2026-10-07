@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import {
@@ -21,7 +21,14 @@ import {
   Edit3,
   AlertTriangle,
   Menu,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  LayoutList,
+  Sparkles,
+  Layers,
+  GraduationCap
 } from "lucide-react";
 import {
   getLiveClasses,
@@ -31,6 +38,11 @@ import {
   deleteLiveClass
 } from "../services/liveClassApi";
 import { getBatches, getAllCourses, getAllTeachers } from "../services/Api";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
 
 const AcademicLiveClassesPage = () => {
   const navigate = useNavigate();
@@ -45,10 +57,14 @@ const AcademicLiveClassesPage = () => {
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [batchFilter, setBatchFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  // View Toggle: 1st preference is List View, 2nd preference is Calendar View
+  const [viewMode, setViewMode] = useState("table"); // 'table' | 'calendar'
 
   // Responsive Mobile Navigation State
   const [isMobile, setIsMobile] = useState(false);
@@ -76,6 +92,69 @@ const AcademicLiveClassesPage = () => {
     setIsMobileMenuOpen(newState);
     window.dispatchEvent(new CustomEvent("toggleMobileMenu", { detail: newState }));
   };
+
+  // IST Date String Helpers
+  const toISTDateString = (isoString) => {
+    if (!isoString) return new Date().toISOString().split("T")[0];
+    try {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date(isoString));
+    } catch (_) {
+      return new Date().toISOString().split("T")[0];
+    }
+  };
+
+  const toISTTimeString = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).format(new Date(isoString));
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const formatISTDate = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Date(isoString).toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      });
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const formatISTTime = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Date(isoString).toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      }) + " IST";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  // Calendar State (supports navigating across months and years including 2026, 2027, 2028)
+  const todayIST = useMemo(() => toISTDateString(new Date().toISOString()), []);
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth()); // 0 - 11
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => todayIST);
 
   // Edit Schedule & Conflict Checking State
   const [showEditModal, setShowEditModal] = useState(false);
@@ -123,67 +202,48 @@ const AcademicLiveClassesPage = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const formatISTTime = (isoString) => {
-    if (!isoString) return "";
-    try {
-      return new Date(isoString).toLocaleTimeString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      }) + " IST";
-    } catch (_) {
-      return "";
-    }
-  };
-
-  const formatISTDate = (isoString) => {
-    if (!isoString) return "";
-    try {
-      return new Date(isoString).toLocaleDateString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        day: "numeric",
-        month: "short",
-        year: "numeric"
-      });
-    } catch (_) {
-      return "";
-    }
-  };
-
-  const toISTDateString = (isoString) => {
-    if (!isoString) return new Date().toISOString().split("T")[0];
-    try {
-      return new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kolkata",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit"
-      }).format(new Date(isoString));
-    } catch (_) {
-      return new Date().toISOString().split("T")[0];
-    }
-  };
-
-  const toISTTimeString = (isoString) => {
-    if (!isoString) return "";
-    try {
-      return new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
-      }).format(new Date(isoString));
-    } catch (_) {
-      return "";
-    }
-  };
-
   const refreshLiveClasses = async () => {
     try {
       const classRes = await getLiveClasses();
       setClasses(classRes?.liveClasses || (Array.isArray(classRes) ? classRes : []));
     } catch (_) {}
+  };
+
+  const fetchInitialData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("token");
+
+      const [classRes, batchRes, courseRes, teacherRes] = await Promise.all([
+        getLiveClasses().catch(() => ({ liveClasses: [] })),
+        getBatches(token).catch(() => []),
+        getAllCourses(token).catch(() => []),
+        getAllTeachers(token).catch(() => [])
+      ]);
+
+      setClasses(classRes?.liveClasses || (Array.isArray(classRes) ? classRes : []));
+
+      const batchList = Array.isArray(batchRes)
+        ? batchRes
+        : (batchRes?.data || batchRes?.batches || []);
+      setBatches(batchList);
+
+      const courseList = Array.isArray(courseRes)
+        ? courseRes
+        : (courseRes?.data || courseRes?.courses || []);
+      setCourses(courseList);
+
+      const teacherList = Array.isArray(teacherRes)
+        ? teacherRes
+        : (teacherRes?.data || teacherRes?.teachers || []);
+      setTeachers(teacherList);
+    } catch (err) {
+      console.error("Failed to load initial data for live classes:", err);
+      setError("Failed to load live classes schedule. Please check connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -245,57 +305,6 @@ const AcademicLiveClassesPage = () => {
     }, 350);
     return () => clearTimeout(timer);
   }, [editingClass, editFormData.teacher_id, editFormData.scheduled_date, editFormData.start_time, editFormData.end_time]);
-
-  const fetchInitialData = async () => {
-    setLoading(true);
-    setError(null);
-    const token = localStorage.getItem("token");
-
-    // Fetch live classes
-    try {
-      const classRes = await getLiveClasses();
-      setClasses(classRes?.liveClasses || (Array.isArray(classRes) ? classRes : []));
-    } catch (err) {
-      console.error("Error loading live classes:", err);
-    }
-
-    // Fetch batches
-    try {
-      const batchRes = await getBatches(token);
-      console.log("Loaded batches:", batchRes);
-      const batchList = Array.isArray(batchRes) 
-        ? batchRes 
-        : (batchRes?.data || batchRes?.batches || []);
-      setBatches(batchList);
-    } catch (err) {
-      console.error("Error loading batches:", err);
-    }
-
-    // Fetch courses
-    try {
-      const courseRes = await getAllCourses(token);
-      const courseList = Array.isArray(courseRes) 
-        ? courseRes 
-        : (courseRes?.data || courseRes?.courses || []);
-      setCourses(courseList);
-    } catch (err) {
-      console.error("Error loading courses:", err);
-    }
-
-    // Fetch teachers
-    try {
-      const teacherRes = await getAllTeachers();
-      console.log("Loaded teachers:", teacherRes);
-      const teacherList = Array.isArray(teacherRes) 
-        ? teacherRes 
-        : (teacherRes?.data || teacherRes?.teachers || []);
-      setTeachers(teacherList);
-    } catch (err) {
-      console.error("Error loading teachers:", err);
-    }
-
-    setLoading(false);
-  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -371,19 +380,37 @@ const AcademicLiveClassesPage = () => {
     return { startTime, endTime };
   };
 
-  const openScheduleModal = () => {
+  const openScheduleModal = (initialDate = null) => {
+    const targetDate = initialDate || selectedCalendarDate || todayIST;
+    let initialCourseId = "";
+    let initialTeacherId = "";
+    let initialStartTime = "";
+    let initialEndTime = "";
+
+    if (batchFilter) {
+      const selectedBatch = batches.find((b) => (b.batch_id || b.id) === batchFilter);
+      if (selectedBatch) {
+        initialCourseId = selectedBatch.course_id || selectedBatch.course || "";
+        initialTeacherId = selectedBatch.teacher_id || selectedBatch.teacher || "";
+        const times = extractBatchTimes(selectedBatch);
+        initialStartTime = times.startTime || "";
+        initialEndTime = times.endTime || "";
+      }
+    }
+
     setFormData({
-      batch_id: "",
-      course_id: "",
-      teacher_id: "",
+      batch_id: batchFilter || "",
+      course_id: initialCourseId,
+      teacher_id: initialTeacherId,
       title: "",
       description: "",
       session_number: 1,
-      scheduled_date: new Date().toISOString().split("T")[0],
-      start_time: "",
-      end_time: "",
+      scheduled_date: targetDate,
+      start_time: initialStartTime,
+      end_time: initialEndTime,
       recording_enabled: true
     });
+    setScheduleConflict(null);
     setShowScheduleModal(true);
   };
 
@@ -471,10 +498,18 @@ const AcademicLiveClassesPage = () => {
       setShowScheduleModal(false);
       await fetchInitialData();
 
+      // Ensure calendar is in sync with scheduled date's month & year
+      const [sYear, sMonth] = formData.scheduled_date.split("-").map(Number);
+      if (sYear && sMonth) {
+        setCalYear(sYear);
+        setCalMonth(sMonth - 1);
+        setSelectedCalendarDate(formData.scheduled_date);
+      }
+
       setPopupModal({
         type: "success",
         title: "Live Class Scheduled Successfully!",
-        message: "Your new live class is now scheduled. Assigned tutors and students can view it on their portals.",
+        message: "Your new live class is now scheduled. Assigned tutors and students can view it on their portals immediately.",
         highlight: {
           batch: selectedBatch?.batch_name || "Selected Batch",
           classTitle: formData.title,
@@ -618,18 +653,164 @@ const AcademicLiveClassesPage = () => {
     });
   };
 
+  // Calendar Navigation Handlers
+  const handlePrevMonth = () => {
+    if (calMonth === 0) {
+      setCalMonth(11);
+      setCalYear((prev) => prev - 1);
+    } else {
+      setCalMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calMonth === 11) {
+      setCalMonth(0);
+      setCalYear((prev) => prev + 1);
+    } else {
+      setCalMonth((prev) => prev + 1);
+    }
+  };
+
+  const handleGoToToday = () => {
+    const now = new Date();
+    setCalYear(now.getFullYear());
+    setCalMonth(now.getMonth());
+    setSelectedCalendarDate(todayIST);
+  };
+
+  // Generate Year Options (e.g., 2025, 2026, 2027, 2028, 2029)
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return [currentYear - 1, currentYear, currentYear + 1, currentYear + 2, currentYear + 3];
+  }, []);
+
+  // Compute 35 or 42 Month Grid Cells
+  const calendarCells = useMemo(() => {
+    const daysInCurrentMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const firstDayWeekday = new Date(calYear, calMonth, 1).getDay(); // 0 = Sun
+    const daysInPrevMonth = new Date(calYear, calMonth, 0).getDate();
+
+    const cells = [];
+
+    // Leading padding days from prev month
+    for (let i = firstDayWeekday - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      const prevM = calMonth === 0 ? 11 : calMonth - 1;
+      const prevY = calMonth === 0 ? calYear - 1 : calYear;
+      const mStr = String(prevM + 1).padStart(2, "0");
+      const dStr = String(dayNum).padStart(2, "0");
+      cells.push({
+        dayNumber: dayNum,
+        month: prevM,
+        year: prevY,
+        dateString: `${prevY}-${mStr}-${dStr}`,
+        isCurrentMonth: false
+      });
+    }
+
+    // Days in current month
+    for (let dayNum = 1; dayNum <= daysInCurrentMonth; dayNum++) {
+      const mStr = String(calMonth + 1).padStart(2, "0");
+      const dStr = String(dayNum).padStart(2, "0");
+      cells.push({
+        dayNumber: dayNum,
+        month: calMonth,
+        year: calYear,
+        dateString: `${calYear}-${mStr}-${dStr}`,
+        isCurrentMonth: true
+      });
+    }
+
+    // Trailing padding days to fill grid
+    const totalSlots = cells.length > 35 ? 42 : 35;
+    const remaining = totalSlots - cells.length;
+    for (let dayNum = 1; dayNum <= remaining; dayNum++) {
+      const nextM = calMonth === 11 ? 0 : calMonth + 1;
+      const nextY = calMonth === 11 ? calYear + 1 : calYear;
+      const mStr = String(nextM + 1).padStart(2, "0");
+      const dStr = String(dayNum).padStart(2, "0");
+      cells.push({
+        dayNumber: dayNum,
+        month: nextM,
+        year: nextY,
+        dateString: `${nextY}-${mStr}-${dStr}`,
+        isCurrentMonth: false
+      });
+    }
+
+    return cells;
+  }, [calYear, calMonth]);
+
+  // Batch class counts
+  const batchClassCounts = useMemo(() => {
+    const counts = {};
+    classes.forEach((c) => {
+      const bId = c.batch_id || c.batches?.batch_id;
+      if (bId) {
+        counts[bId] = (counts[bId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [classes]);
+
+  // Index classes by YYYY-MM-DD
+  const classesByDate = useMemo(() => {
+    const map = {};
+    classes.forEach((c) => {
+      const bId = c.batch_id || c.batches?.batch_id;
+      if (batchFilter && bId !== batchFilter) return;
+
+      const matchesSearch = !searchTerm ||
+        (c.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (c.batches?.batch_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (c.teachers?.full_name || c.teachers?.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return;
+
+      const d = toISTDateString(c.scheduled_start);
+      if (!map[d]) map[d] = [];
+      map[d].push(c);
+    });
+    return map;
+  }, [classes, batchFilter, searchTerm]);
+
+  // Classes for the selected calendar day
+  const selectedDayClasses = useMemo(() => {
+    const list = classesByDate[selectedCalendarDate] || [];
+    return list.slice().sort((a, b) => {
+      return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+    });
+  }, [classesByDate, selectedCalendarDate]);
+
+  // Formatted selected calendar date label
+  const formattedSelectedDate = useMemo(() => {
+    if (!selectedCalendarDate) return "";
+    try {
+      return new Date(`${selectedCalendarDate}T12:00:00+05:30`).toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      });
+    } catch (_) {
+      return selectedCalendarDate;
+    }
+  }, [selectedCalendarDate]);
+
+  // Filtered classes for Table / List View
   const filteredClasses = classes.filter((c) => {
     const startMs = new Date(c.scheduled_start).getTime();
     const endMs = new Date(c.scheduled_end).getTime();
     const isLive = c.status === "LIVE";
-    const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs + 60 * 60 * 1000;
-    const isExpired = !isLive && (c.status === "COMPLETED" || currentTimeMs > endMs + 60 * 60 * 1000);
+    const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs;
+    const isExpired = !isLive && currentTimeMs > endMs;
     const isUpcoming = c.status === "SCHEDULED" && currentTimeMs < startMs - 15 * 60 * 1000;
     const isCompleted = c.status === "COMPLETED" && !isLive;
 
     let matchesStatus = true;
     if (statusFilter === "LIVE") {
-      matchesStatus = isLive || (c.status === "SCHEDULED" && isInSlot);
+      matchesStatus = isLive || (isInSlot && !isExpired);
     } else if (statusFilter === "SCHEDULED") {
       matchesStatus = isUpcoming || (c.status === "SCHEDULED" && !isExpired);
     } else if (statusFilter === "COMPLETED") {
@@ -644,7 +825,11 @@ const AcademicLiveClassesPage = () => {
       (c.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.batches?.batch_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.teachers?.full_name || c.teachers?.name || "").toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
+
+    const bId = c.batch_id || c.batches?.batch_id;
+    const matchesBatch = !batchFilter || bId === batchFilter;
+
+    return matchesStatus && matchesSearch && matchesBatch;
   });
 
   return (
@@ -677,53 +862,81 @@ const AcademicLiveClassesPage = () => {
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
-                {isTeacher ? "My Live Classes" : "Live Classes & Recordings"}
+                {isTeacher ? "My Live Classes" : "Live Classes & Timetable"}
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                 {isTeacher
-                  ? "View assigned live sessions and launch your Live Studio"
-                  : "Schedule live sessions and oversee class recordings"}
+                  ? "Interactive monthly calendar, assigned sessions & live studio launcher"
+                  : "Comprehensive yearly timetable schedule & interactive live classes"}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            {/* View Mode Switcher (1st preference: List View, 2nd preference: Calendar) */}
+            <div className="bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 shadow-inner">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === "table"
+                    ? "bg-white text-blue-600 shadow-sm font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="List / Table View"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span>List View</span>
+              </button>
+              <button
+                onClick={() => setViewMode("calendar")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === "calendar"
+                    ? "bg-white text-blue-600 shadow-sm font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Interactive Calendar View"
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Calendar</span>
+              </button>
+            </div>
+
             <button
               onClick={() => navigate(isTeacher ? "/teacher/recordings" : "/academic/recordings")}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs sm:text-sm font-semibold shadow-sm transition-all"
+              className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold shadow-sm transition-all"
             >
-              <Film className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>{isTeacher ? "Recordings" : "Recordings Archive"}</span>
+              <Film className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 shrink-0" />
+              <span className="hidden sm:inline">{isTeacher ? "Recordings" : "Recordings Archive"}</span>
             </button>
 
             {!isTeacher && (
               <button
-                onClick={openScheduleModal}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                onClick={() => openScheduleModal()}
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-sm transition-all cursor-pointer"
               >
-                <Plus className="w-4 h-4 shrink-0" />
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span>Schedule Class</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Stats Row - 2x2 on Mobile, 4 columns on Desktop */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mb-6">
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        {/* Stats Row (Small & Clean in mobile) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-4 sm:mb-6">
+          <div className="bg-white p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs sm:shadow-sm flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Scheduled</p>
-              <p className="text-xl sm:text-2xl font-bold text-slate-800 mt-0.5 sm:mt-1">{classes.length}</p>
+              <p className="text-lg sm:text-2xl font-bold text-slate-800 mt-0.5 sm:mt-1">{classes.length}</p>
             </div>
-            <div className="p-2 sm:p-3 bg-blue-50 text-blue-600 rounded-xl">
-              <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-1.5 sm:p-3 bg-blue-50 text-blue-600 rounded-lg sm:rounded-xl">
+              <Calendar className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs sm:shadow-sm flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Live Now</p>
-              <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-bold text-emerald-600 mt-0.5 sm:mt-1">
                 {classes.filter((c) => {
                   const startMs = new Date(c.scheduled_start).getTime();
                   const endMs = new Date(c.scheduled_end).getTime();
@@ -733,15 +946,15 @@ const AcademicLiveClassesPage = () => {
                 }).length}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl animate-pulse">
-              <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-1.5 sm:p-3 bg-emerald-50 text-emerald-600 rounded-lg sm:rounded-xl animate-pulse">
+              <Radio className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs sm:shadow-sm flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Upcoming</p>
-              <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-bold text-amber-600 mt-0.5 sm:mt-1">
                 {classes.filter((c) => {
                   const startMs = new Date(c.scheduled_start).getTime();
                   const endMs = new Date(c.scheduled_end).getTime();
@@ -749,369 +962,713 @@ const AcademicLiveClassesPage = () => {
                 }).length}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-amber-50 text-amber-600 rounded-xl">
-              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-1.5 sm:p-3 bg-amber-50 text-amber-600 rounded-lg sm:rounded-xl">
+              <Clock className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs sm:shadow-sm flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Recordings</p>
-              <p className="text-xl sm:text-2xl font-bold text-purple-600 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-bold text-purple-600 mt-0.5 sm:mt-1">
                 {classes.filter((c) => c.recording_enabled).length}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-purple-50 text-purple-600 rounded-xl">
-              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-1.5 sm:p-3 bg-purple-50 text-purple-600 rounded-lg sm:rounded-xl">
+              <ShieldCheck className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </div>
           </div>
         </div>
 
-        {/* Filter & Search Bar */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row gap-3 sm:gap-4 items-stretch md:items-center justify-between">
+        {/* 🌟 FILTER & SEARCH BAR WITH BATCH DROPDOWN (Strict Dropdown) */}
+        <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs sm:shadow-sm mb-4 sm:mb-6 flex flex-col md:flex-row gap-2.5 sm:gap-4 items-stretch md:items-center justify-between">
+          {/* Search Input */}
           <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 absolute left-3.5 top-3 sm:top-3.5 text-slate-400" />
+            <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-3 sm:left-3.5 top-2.5 sm:top-3 text-slate-400" />
             <input
               type="text"
               placeholder="Search by topic, batch name, or tutor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
           </div>
 
-          <div className="flex gap-1.5 sm:gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-            {["ALL", "LIVE", "SCHEDULED", "COMPLETED", "CANCELLED"].map((status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                  statusFilter === status
-                    ? "bg-slate-800 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto">
+            {/* Batch Filter Dropdown */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 w-full sm:w-auto shrink-0 shadow-xs">
+              <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 shrink-0" />
+              <select
+                value={batchFilter}
+                onChange={(e) => setBatchFilter(e.target.value)}
+                className="bg-transparent text-slate-700 font-semibold focus:outline-none cursor-pointer w-full sm:w-auto sm:max-w-[220px] truncate text-xs"
               >
-                {status}
-              </button>
-            ))}
+                <option value="">All Batches ({batches.length})</option>
+                {batches.map((b) => {
+                  const bId = b.batch_id || b.id;
+                  const count = batchClassCounts[bId] || 0;
+                  return (
+                    <option key={bId} value={bId}>
+                      {b.batch_name} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* Status Filters */}
+            <div className="flex gap-1 sm:gap-2 w-full sm:w-auto overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+              {["ALL", "LIVE", "SCHEDULED", "COMPLETED", "CANCELLED"].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    statusFilter === status
+                      ? "bg-slate-800 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Classes Content */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 text-sm">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-3"></div>
-              <p>Loading live class schedule...</p>
+        {/* 🌟 1. CALENDAR VIEW MODE */}
+        {viewMode === "calendar" ? (
+          <div className="space-y-6">
+            {/* Calendar Controls & Month/Year Switcher */}
+            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                {/* Prev & Next Month buttons */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    onClick={handlePrevMonth}
+                    className="p-1.5 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleNextMonth}
+                    className="p-1.5 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                    title="Next Month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Month Dropdown */}
+                <select
+                  value={calMonth}
+                  onChange={(e) => setCalMonth(Number(e.target.value))}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold rounded-xl border border-slate-200 focus:outline-none cursor-pointer transition-colors"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>{name}</option>
+                  ))}
+                </select>
+
+                {/* Year Dropdown (Allows selecting Next Year e.g. 2027 easily!) */}
+                <select
+                  value={calYear}
+                  onChange={(e) => setCalYear(Number(e.target.value))}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold rounded-xl border border-slate-200 focus:outline-none cursor-pointer transition-colors"
+                >
+                  {yearOptions.map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+
+                {/* Jump to Today Button */}
+                <button
+                  onClick={handleGoToToday}
+                  className="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                >
+                  Today
+                </button>
+              </div>
+
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-medium text-slate-700">Live Class</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                  <span className="font-medium text-slate-700">Scheduled</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                  <span className="font-medium text-slate-700">Completed</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
+                  <span className="font-medium text-slate-700">Auto Rec</span>
+                </span>
+              </div>
             </div>
-          ) : filteredClasses.length === 0 ? (
-            <div className="p-8 sm:p-12 text-center">
-              <Video className="w-10 h-10 sm:w-12 sm:h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-slate-700 font-semibold text-base mb-1">
-                {isTeacher ? "No Live Classes Assigned" : "No live classes found"}
-              </h3>
-              <p className="text-slate-400 text-xs mt-1 max-w-sm mx-auto">
-                {isTeacher
-                  ? "No live classes scheduled for you right now. Your Academic Coordinator will schedule your sessions."
-                  : "Schedule your first class using the button above."}
-              </p>
+
+            {/* Calendar Grid & Selected Day Schedule Panel Container */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* 7-Column Month Grid (8 Cols on Desktop) */}
+              <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-3 sm:p-5">
+                {/* Weekday Header */}
+                <div className="grid grid-cols-7 gap-1 text-center mb-2 pb-2 border-b border-slate-100">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => (
+                    <div
+                      key={day}
+                      className={`text-xs font-bold uppercase tracking-wider py-1 ${
+                        idx === 0 || idx === 6 ? "text-slate-400" : "text-slate-700"
+                      }`}
+                    >
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Days Grid Cells */}
+                <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                  {calendarCells.map((cell) => {
+                    const isToday = cell.dateString === todayIST;
+                    const isSelected = cell.dateString === selectedCalendarDate;
+                    const cellClasses = classesByDate[cell.dateString] || [];
+                    const hasLive = cellClasses.some((c) => c.status === "LIVE");
+                    const hasScheduled = cellClasses.some((c) => c.status === "SCHEDULED");
+
+                    return (
+                      <div
+                        key={cell.dateString}
+                        onClick={() => setSelectedCalendarDate(cell.dateString)}
+                        className={`min-h-[75px] sm:min-h-[96px] p-1.5 sm:p-2 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between group relative ${
+                          isSelected
+                            ? "bg-purple-50/70 border-purple-500 shadow-md ring-2 ring-purple-500/30"
+                            : isToday
+                            ? "bg-blue-50/50 border-blue-300 hover:border-blue-400"
+                            : cell.isCurrentMonth
+                            ? "bg-slate-50/60 border-slate-200/80 hover:bg-slate-100/70"
+                            : "bg-slate-50/20 border-slate-100/60 text-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {/* Day Number Header */}
+                        <div className="flex items-center justify-between">
+                          <span
+                            className={`text-xs sm:text-sm font-bold w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                              isToday
+                                ? "bg-blue-600 text-white font-extrabold shadow-sm"
+                                : isSelected
+                                ? "bg-purple-600 text-white font-extrabold shadow-sm"
+                                : cell.isCurrentMonth
+                                ? "text-slate-700"
+                                : "text-slate-400"
+                            }`}
+                          >
+                            {cell.dayNumber}
+                          </span>
+
+                          {/* Quick indicators */}
+                          <div className="flex items-center gap-1">
+                            {hasLive && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Live Now" />
+                            )}
+                            {cellClasses.length > 0 && (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                                isSelected ? "bg-purple-200 text-purple-900" : "bg-slate-200 text-slate-700"
+                              }`}>
+                                {cellClasses.length}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Class Preview Chips inside cell */}
+                        <div className="mt-1 space-y-1 overflow-hidden">
+                          {cellClasses.slice(0, 2).map((item) => (
+                            <div
+                              key={item.id}
+                              className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 rounded truncate border leading-tight ${
+                                item.status === "LIVE"
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : item.status === "SCHEDULED"
+                                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}
+                              title={`${formatISTTime(item.scheduled_start)} - ${item.title}`}
+                            >
+                              {formatISTTime(item.scheduled_start).replace(" IST", "")} {item.title}
+                            </div>
+                          ))}
+                          {cellClasses.length > 2 && (
+                            <div className="text-[9px] font-bold text-slate-400 pl-1">
+                              +{cellClasses.length - 2} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Day Schedule Panel (4 Cols on Desktop) */}
+              <div className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
+                <div>
+                  {/* Panel Header */}
+                  <div className="flex items-start justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>Selected Date Schedule</span>
+                      </div>
+                      <h3 className="text-base sm:text-lg font-bold text-slate-800 leading-snug">
+                        {formattedSelectedDate}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {selectedDayClasses.length} {selectedDayClasses.length === 1 ? "class" : "classes"} scheduled for this date
+                      </p>
+                    </div>
+
+                    {!isTeacher && (
+                      <button
+                        onClick={() => openScheduleModal(selectedCalendarDate)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1 cursor-pointer shrink-0"
+                        title="Schedule class on this specific day"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Schedule</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Day Classes List */}
+                  {selectedDayClasses.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50/70 rounded-2xl border border-slate-100 my-4">
+                      <CalendarDays className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-semibold text-slate-600">No Classes on this Date</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-[200px] mx-auto">
+                        No scheduled live sessions for {formattedSelectedDate}.
+                      </p>
+                      {!isTeacher && (
+                        <button
+                          onClick={() => openScheduleModal(selectedCalendarDate)}
+                          className="mt-3 px-3 py-1.5 bg-white border border-slate-300 hover:border-blue-400 text-slate-700 hover:text-blue-600 rounded-xl text-xs font-semibold shadow-sm transition-all"
+                        >
+                          + Schedule Class on this Day
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
+                      {selectedDayClasses.map((item) => {
+                        const startMs = new Date(item.scheduled_start).getTime();
+                        const endMs = new Date(item.scheduled_end).getTime();
+                        const isLive = item.status === "LIVE";
+                        const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs;
+                        const isExpired = !isLive && currentTimeMs > endMs;
+                        const canLaunch = (isLive || isInSlot) && !isExpired;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-blue-300 transition-all shadow-xs sm:shadow-sm"
+                          >
+                            <div className="flex items-start justify-between gap-1.5 mb-1 sm:mb-1.5">
+                              <div className="min-w-0">
+                                <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-700">
+                                  Session #{item.session_number}
+                                </span>
+                                <h4 className="text-xs sm:text-sm font-bold text-slate-800 mt-0.5 truncate">
+                                  {item.title}
+                                </h4>
+                              </div>
+
+                              {isLive ? (
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px] sm:text-[10px] animate-pulse shrink-0">
+                                  LIVE NOW
+                                </span>
+                              ) : isInSlot ? (
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px] sm:text-[10px] animate-pulse shrink-0">
+                                  {item.status === "COMPLETED" ? "RE-JOINABLE" : "IN SESSION"}
+                                </span>
+                              ) : isExpired ? (
+                                <span className="px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 text-[9px] sm:text-[10px] font-semibold shrink-0">
+                                  Schedule Ended
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 text-[9px] sm:text-[10px] font-semibold border border-blue-200 shrink-0">
+                                  Scheduled
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-[11px] sm:text-xs text-slate-600 font-medium mb-1 truncate">
+                              Batch: <strong>{item.batches?.batch_name || "General Batch"}</strong>
+                            </p>
+
+                            <div className="flex items-center gap-1 text-[11px] sm:text-xs text-slate-500 mb-1.5 sm:mb-2">
+                              <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400 shrink-0" />
+                              <span>{formatISTTime(item.scheduled_start)} - {formatISTTime(item.scheduled_end)}</span>
+                            </div>
+
+                            <div className="pt-1.5 sm:pt-2 border-t border-slate-200/60 flex items-center justify-between gap-1.5">
+                              <div className="text-[10px] sm:text-[11px] text-slate-500 truncate">
+                                Tutor: {item.teachers?.full_name || item.teachers?.name || "Instructor"}
+                              </div>
+
+                              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                {isExpired ? (
+                                  <button
+                                    disabled
+                                    className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-slate-200 text-slate-400 text-[11px] sm:text-xs rounded-lg cursor-not-allowed font-medium flex items-center gap-1"
+                                  >
+                                    <Lock className="w-3 h-3 text-slate-400" />
+                                    <span>Ended</span>
+                                  </button>
+                                ) : canLaunch ? (
+                                  <button
+                                    onClick={() => navigate(`/live-studio/${item.id}`)}
+                                    className="px-2.5 py-1 sm:px-3 sm:py-1 text-white text-[11px] sm:text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1"
+                                  >
+                                    <Video className="w-3 h-3" />
+                                    <span>{isTeacher ? (item.status === "COMPLETED" ? "Reopen" : "Launch") : "Studio"}</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    disabled
+                                    className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-slate-100 text-slate-400 text-[11px] sm:text-xs rounded-lg cursor-not-allowed font-medium border border-slate-200 flex items-center gap-1"
+                                    title="Session is scheduled. Live studio will be available when class starts."
+                                  >
+                                    <Clock className="w-3 h-3 text-slate-400" />
+                                    <span>Scheduled</span>
+                                  </button>
+                                )}
+
+                                {!isTeacher && (
+                                  <>
+                                    <button
+                                      onClick={() => handleOpenEditModal(item)}
+                                      className="p-1 text-slate-500 hover:text-blue-600 rounded-md sm:rounded-lg hover:bg-blue-50"
+                                      title="Edit schedule"
+                                    >
+                                      <Edit3 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(item.id, item.title)}
+                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-md sm:rounded-lg hover:bg-rose-50"
+                                      title="Cancel session"
+                                    >
+                                      <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom Quick Action */}
+                {!isTeacher && (
+                  <div className="pt-4 border-t border-slate-100 mt-4">
+                    <button
+                      onClick={() => openScheduleModal(selectedCalendarDate)}
+                      className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-blue-200 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Schedule Another Class on {selectedCalendarDate}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          ) : (
-            <>
-              {/* DESKTOP TABLE VIEW (hidden on mobile, visible on md+) */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600">
-                  <thead className="bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="py-4 px-6">Class Title & Session</th>
-                      <th className="py-4 px-6">Batch & Course</th>
-                      <th className="py-4 px-6">Tutor</th>
-                      <th className="py-4 px-6">Schedule Time</th>
-                      <th className="py-4 px-6">Auto Recording</th>
-                      <th className="py-4 px-6">Status</th>
-                      <th className="py-4 px-6 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+          </div>
+        ) : (
+          /* 📋 2. TABLE / LIST VIEW MODE */
+          <div>
+            {/* Classes Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              {loading ? (
+                <div className="p-12 text-center text-slate-400 text-sm">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-3"></div>
+                  <p>Loading live class schedule...</p>
+                </div>
+              ) : filteredClasses.length === 0 ? (
+                <div className="p-8 sm:p-12 text-center">
+                  <Video className="w-10 h-10 sm:w-12 sm:h-12 text-slate-300 mx-auto mb-3" />
+                  <h3 className="text-slate-700 font-semibold text-base mb-1">
+                    {isTeacher ? "No Live Classes Assigned" : "No live classes found"}
+                  </h3>
+                  <p className="text-slate-400 text-xs mt-1 max-w-sm mx-auto">
+                    {isTeacher
+                      ? "No live classes scheduled for you right now."
+                      : "Schedule your first class using the button above."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* DESKTOP TABLE VIEW */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600">
+                      <thead className="bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="py-4 px-6">Class Title & Session</th>
+                          <th className="py-4 px-6">Batch & Course</th>
+                          <th className="py-4 px-6">Tutor</th>
+                          <th className="py-4 px-6">Schedule Time</th>
+                          <th className="py-4 px-6">Auto Recording</th>
+                          <th className="py-4 px-6">Status</th>
+                          <th className="py-4 px-6 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredClasses.map((item) => {
+                          const startMs = new Date(item.scheduled_start).getTime();
+                          const endMs = new Date(item.scheduled_end).getTime();
+                          const isLive = item.status === "LIVE";
+                          const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs;
+                          const isExpired = !isLive && currentTimeMs > endMs;
+                          const canLaunch = (isLive || isInSlot) && !isExpired;
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-4 px-6">
+                                <div className="font-semibold text-slate-800">{item.title}</div>
+                                <div className="text-xs text-slate-400 mt-0.5">
+                                  Session #{item.session_number} • Room: {item.room_name}
+                                </div>
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="font-medium text-slate-800">{item.batches?.batch_name || "General Batch"}</div>
+                                <div className="text-xs text-slate-400">
+                                  {item.courses?.course_name ? `${item.courses.course_name} (${item.courses.language})` : "Modern Languages"}
+                                </div>
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
+                                    {(item.teachers?.full_name || item.teachers?.name || "T")[0]}
+                                  </div>
+                                  <span className="font-medium text-slate-700">
+                                    {item.teachers?.full_name || item.teachers?.name || "Assigned Tutor"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="font-medium text-slate-800">
+                                  {formatISTDate(item.scheduled_start)}
+                                </div>
+                                <div className="text-xs text-slate-400 font-medium">
+                                  {formatISTTime(item.scheduled_start)} - {formatISTTime(item.scheduled_end)}
+                                </div>
+                              </td>
+                              <td className="py-4 px-6">
+                                {item.recording_enabled ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                    Auto Rec ON
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-400">Disabled</span>
+                                )}
+                              </td>
+                              <td className="py-4 px-6">
+                                {item.status === "CANCELLED" && (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700">
+                                    <XCircle className="w-3 h-3" />
+                                    Cancelled
+                                  </span>
+                                )}
+                                {item.status !== "CANCELLED" && isExpired && (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                                    <CheckCircle className="w-3 h-3 text-slate-500" />
+                                    Schedule Ended
+                                  </span>
+                                )}
+                                {item.status === "LIVE" && !isExpired && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 animate-pulse">
+                                    <Radio className="w-3.5 h-3.5 text-emerald-600" />
+                                    LIVE NOW
+                                  </span>
+                                )}
+                                {item.status !== "LIVE" && isInSlot && !isExpired && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 animate-pulse">
+                                    <Radio className="w-3.5 h-3.5 text-emerald-600" />
+                                    {item.status === "COMPLETED" ? "RE-JOINABLE" : "IN SESSION"}
+                                  </span>
+                                )}
+                                {item.status === "COMPLETED" && !isInSlot && !isExpired && (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                    Completed
+                                  </span>
+                                )}
+                                {item.status === "SCHEDULED" && !isInSlot && !isExpired && (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
+                                    <Clock className="w-3 h-3" />
+                                    Scheduled
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {isExpired ? (
+                                    <button
+                                      disabled
+                                      className="px-3.5 py-1.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-not-allowed border border-slate-200 shadow-none"
+                                    >
+                                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>Ended</span>
+                                    </button>
+                                  ) : canLaunch ? (
+                                    <button
+                                      onClick={() => navigate(`/live-studio/${item.id}`)}
+                                      className="px-3.5 py-1.5 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+                                    >
+                                      <Video className="w-3.5 h-3.5" />
+                                      {isTeacher ? (item.status === "COMPLETED" ? "Reopen Studio" : "Launch Studio") : "Enter Studio"}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      className="px-3.5 py-1.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-not-allowed border border-slate-200 shadow-none"
+                                      title="Session is scheduled. Live studio will be available when class starts."
+                                    >
+                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>Scheduled</span>
+                                    </button>
+                                  )}
+                                  {!isTeacher && (
+                                    <>
+                                      <button
+                                        onClick={() => handleOpenEditModal(item)}
+                                        className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                                        title="Edit Schedule & Timings"
+                                      >
+                                        <Edit3 className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDelete(item.id, item.title)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                                        title="Cancel Live Class"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* MOBILE CARDS VIEW (Clean, Simple, Good & Small) */}
+                  <div className="md:hidden divide-y divide-slate-100">
                     {filteredClasses.map((item) => {
                       const startMs = new Date(item.scheduled_start).getTime();
                       const endMs = new Date(item.scheduled_end).getTime();
                       const isLive = item.status === "LIVE";
-                      const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs + 60 * 60 * 1000;
-                      const isExpired = !isLive && (item.status === "COMPLETED" || currentTimeMs > endMs + 60 * 60 * 1000);
+                      const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs;
+                      const isExpired = !isLive && currentTimeMs > endMs;
+                      const canLaunch = (isLive || isInSlot) && !isExpired;
 
                       return (
-                      <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="font-semibold text-slate-800">{item.title}</div>
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            Session #{item.session_number} • Room: {item.room_name}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="font-medium text-slate-800">{item.batches?.batch_name || "General Batch"}</div>
-                          <div className="text-xs text-slate-400">
-                            {item.courses?.course_name ? `${item.courses.course_name} (${item.courses.language})` : "Modern Languages"}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
-                              {(item.teachers?.full_name || item.teachers?.name || "T")[0]}
+                        <div key={item.id} className="p-2.5 space-y-1.5 bg-white">
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="min-w-0">
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                                Session #{item.session_number}
+                              </span>
+                              <h4 className="font-bold text-slate-800 text-xs mt-0.5 truncate">{item.title}</h4>
+                              <p className="text-[11px] text-slate-500 truncate">{item.batches?.batch_name || "General Batch"}</p>
                             </div>
-                            <span className="font-medium text-slate-700">
-                              {item.teachers?.full_name || item.teachers?.name || "Assigned Tutor"}
-                            </span>
+                            {isLive ? (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold animate-pulse shrink-0">
+                                LIVE
+                              </span>
+                            ) : isInSlot ? (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold animate-pulse shrink-0">
+                                {item.status === "COMPLETED" ? "RE-JOINABLE" : "IN SESSION"}
+                              </span>
+                            ) : isExpired ? (
+                              <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 text-[9px] font-medium shrink-0">Ended</span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 text-[9px] font-semibold shrink-0">Scheduled</span>
+                            )}
                           </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="font-medium text-slate-800">
-                            {formatISTDate(item.scheduled_start)}
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-600">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{formatISTDate(item.scheduled_start)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{formatISTTime(item.scheduled_start)} - {formatISTTime(item.scheduled_end)}</span>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-400 font-medium">
-                            {formatISTTime(item.scheduled_start)} - {formatISTTime(item.scheduled_end)}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          {item.recording_enabled ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
-                              Auto Rec ON
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">Disabled</span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6">
-                          {item.status === "CANCELLED" && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700">
-                              <XCircle className="w-3 h-3" />
-                              Cancelled
-                            </span>
-                          )}
-                          {item.status !== "CANCELLED" && isExpired && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                              <CheckCircle className="w-3 h-3 text-slate-500" />
-                              Schedule Ended
-                            </span>
-                          )}
-                          {(item.status === "LIVE" || isInSlot) && !isExpired && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 animate-pulse">
-                              <Radio className="w-3.5 h-3.5 text-emerald-600" />
-                              {item.status === "LIVE" ? "LIVE NOW" : "IN SESSION"}
-                            </span>
-                          )}
-                          {item.status === "COMPLETED" && !isExpired && !isInSlot && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle className="w-3 h-3 text-emerald-600" />
-                              Completed
-                            </span>
-                          )}
-                          {item.status === "SCHEDULED" && !isInSlot && !isExpired && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
-                              <Clock className="w-3 h-3" />
-                              Scheduled
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <div className="flex items-center justify-end gap-2">
+
+                          <div className="pt-1 flex items-center gap-1.5">
                             {isExpired ? (
+                              <button disabled className="flex-1 py-1 px-2.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200 flex items-center justify-center gap-1">
+                                <Lock className="w-3 h-3 text-slate-400" />
+                                <span>Ended</span>
+                              </button>
+                            ) : canLaunch ? (
                               <button
-                                disabled
-                                className="px-3.5 py-1.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-not-allowed border border-slate-200 shadow-none"
-                                title={`Schedule ended at ${formatISTTime(item.scheduled_end)}`}
+                                onClick={() => navigate(`/live-studio/${item.id}`)}
+                                className="flex-1 py-1 px-2.5 text-white text-xs font-bold rounded-lg shadow-xs transition-all bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-1"
                               >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Schedule Ended</span>
+                                <Video className="w-3 h-3" />
+                                <span>{isTeacher ? (item.status === "COMPLETED" ? "Reopen Studio" : "Launch Studio") : "Enter Studio"}</span>
                               </button>
                             ) : (
                               <button
-                                onClick={() => navigate(`/live-studio/${item.id}`)}
-                                className={`px-3.5 py-1.5 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer ${
-                                  item.status === "LIVE" || isInSlot
-                                    ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/20"
-                                    : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
-                                }`}
-                                title={`Active schedule window (closes at ${formatISTTime(item.scheduled_end)})`}
+                                disabled
+                                className="flex-1 py-1 px-2.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200 flex items-center justify-center gap-1"
+                                title="Session is scheduled. Live studio will be available when class starts."
                               >
-                                <Video className="w-3.5 h-3.5" />
-                                {isTeacher ? "🚀 Launch Studio" : "Enter Studio"}
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                <span>Scheduled</span>
                               </button>
                             )}
+
                             {!isTeacher && (
-                              <>
+                              <div className="flex items-center gap-1 shrink-0">
                                 <button
                                   onClick={() => handleOpenEditModal(item)}
-                                  className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
-                                  title="Edit Schedule & Timings"
+                                  className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-all"
+                                  title="Edit schedule"
                                 >
-                                  <Edit3 className="w-4 h-4" />
+                                  <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => handleDelete(item.id, item.title)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                                  title="Cancel Class"
+                                  className="p-1.5 bg-slate-100 text-rose-600 rounded-lg hover:bg-rose-50 transition-all"
+                                  title="Cancel class"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              </>
+                              </div>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* MOBILE CARDS VIEW (visible on mobile < md, clean responsive Berry style) */}
-              <div className="md:hidden p-3 space-y-3.5 bg-slate-50/50">
-                {filteredClasses.map((item) => {
-                  const startMs = new Date(item.scheduled_start).getTime();
-                  const endMs = new Date(item.scheduled_end).getTime();
-                  const isLive = item.status === "LIVE";
-                  const isInSlot = currentTimeMs >= startMs - 15 * 60 * 1000 && currentTimeMs <= endMs + 60 * 60 * 1000;
-                  const isExpired = !isLive && (item.status === "COMPLETED" || currentTimeMs > endMs + 60 * 60 * 1000);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3"
-                    >
-                      {/* Card Header: Title, Session & Status */}
-                      <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-slate-800 text-sm truncate">
-                              {item.title}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600">
-                              #{item.session_number}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                            {item.batches?.batch_name || "General Batch"} • {item.courses?.course_name || "Course"}
-                          </p>
-                        </div>
-
-                        {/* Status Badge */}
-                        <div className="shrink-0">
-                          {item.status === "CANCELLED" && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700">
-                              <XCircle className="w-3 h-3" />
-                              Cancelled
-                            </span>
-                          )}
-                          {item.status !== "CANCELLED" && isExpired && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">
-                              <CheckCircle className="w-3 h-3" />
-                              Ended
-                            </span>
-                          )}
-                          {(item.status === "LIVE" || isInSlot) && !isExpired && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
-                              <Radio className="w-3 h-3 text-emerald-600" />
-                              {item.status === "LIVE" ? "LIVE NOW" : "IN SESSION"}
-                            </span>
-                          )}
-                          {item.status === "COMPLETED" && !isExpired && !isInSlot && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
-                              <CheckCircle className="w-3 h-3" />
-                              Completed
-                            </span>
-                          )}
-                          {item.status === "SCHEDULED" && !isInSlot && !isExpired && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700">
-                              <Clock className="w-3 h-3" />
-                              Scheduled
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Card Details: Tutor, Timing, Auto Rec */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0">
-                            {(item.teachers?.full_name || item.teachers?.name || "T")[0]}
-                          </div>
-                          <span className="truncate font-medium">
-                            {item.teachers?.full_name || item.teachers?.name || "Tutor"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-end">
-                          {item.recording_enabled ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
-                              Auto Rec ON
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Rec Off</span>
-                          )}
-                        </div>
-
-                        <div className="col-span-2 flex items-center gap-1.5 text-slate-600 text-[11px] pt-1">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-semibold text-slate-700">{formatISTDate(item.scheduled_start)}</span>
-                          <span className="text-slate-400">•</span>
-                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{formatISTTime(item.scheduled_start)} - {formatISTTime(item.scheduled_end)}</span>
-                        </div>
-                      </div>
-
-                      {/* Card Action Buttons */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                        {isExpired ? (
-                          <button
-                            disabled
-                            className="flex-1 py-2.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
-                          >
-                            <Lock className="w-3.5 h-3.5" />
-                            <span>Schedule Ended</span>
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => navigate(`/live-studio/${item.id}`)}
-                            className={`flex-1 py-2.5 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                              item.status === "LIVE" || isInSlot
-                                ? "bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-500/30"
-                                : "bg-blue-600 shadow-blue-500/30"
-                            }`}
-                          >
-                            <Video className="w-4 h-4" />
-                            <span>{isTeacher ? "🚀 Launch Studio" : "Enter Live Studio"}</span>
-                          </button>
-                        )}
-
-                        {!isTeacher && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleOpenEditModal(item)}
-                              className="p-2 text-slate-600 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-colors"
-                              title="Edit Schedule"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(item.id, item.title)}
-                              className="p-2 text-slate-400 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-colors"
-                              title="Cancel Class"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Schedule Modal */}
         {showScheduleModal && (
@@ -1121,7 +1678,7 @@ const AcademicLiveClassesPage = () => {
                 <div>
                   <h3 className="text-xl font-bold text-slate-800">Schedule New Live Class</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Set up an in-app interactive class with automatic recording
+                    Set up an interactive class with Asia/Kolkata strict schedule & auto recording
                   </p>
                 </div>
                 <button
@@ -1159,7 +1716,7 @@ const AcademicLiveClassesPage = () => {
                     <div className="mt-2.5 flex items-center gap-2 px-3.5 py-2 bg-blue-50/90 border border-blue-200/90 rounded-xl text-xs text-blue-800">
                       <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                       <span>
-                        <strong>Batch Slot (from DB):</strong> {formData.start_time ? formatTime12(formData.start_time) : "--"} to {formData.end_time ? formatTime12(formData.end_time) : "--"} (Asia/Kolkata)
+                        <strong>Batch Slot:</strong> {formData.start_time ? formatTime12(formData.start_time) : "--"} to {formData.end_time ? formatTime12(formData.end_time) : "--"} (Asia/Kolkata)
                       </span>
                     </div>
                   )}
@@ -1228,12 +1785,23 @@ const AcademicLiveClassesPage = () => {
                   </div>
                 </div>
 
-                <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded-xl p-3 flex items-start gap-2">
-                  <span className="text-base leading-none">🕒</span>
-                  <span className="leading-relaxed">
-                    <strong>Asia/Kolkata (IST) Strict Window:</strong> Live studio entry is only active during the scheduled slot. Once the end time passes (e.g. 10:01 AM for a 10:00 AM class), the join button automatically disables for students and faculty.
-                  </span>
-                </div>
+                {/* Friendly formatted schedule confirmation */}
+                {formData.scheduled_date && (
+                  <div className="text-[11px] text-blue-900 bg-blue-50/80 border border-blue-200/80 rounded-xl p-2.5 flex items-center gap-2">
+                    <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>
+                      <strong>Schedule Target:</strong>{" "}
+                      {new Date(`${formData.scheduled_date}T12:00:00+05:30`).toLocaleDateString("en-IN", {
+                        timeZone: "Asia/Kolkata",
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric"
+                      })}{" "}
+                      (Asia/Kolkata IST)
+                    </span>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Assigned Tutor</label>
@@ -1247,7 +1815,6 @@ const AcademicLiveClassesPage = () => {
                     {teachers.map((t) => {
                       const tId = t.teacher_id || t.id || t.user_id || t.teacher;
                       const cleanName = (t.full_name || t.teacher_name || t.name || "Instructor").trim();
-
                       return (
                         <option key={tId} value={tId}>
                           {cleanName}
@@ -1255,6 +1822,18 @@ const AcademicLiveClassesPage = () => {
                       );
                     })}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Topics / Agenda</label>
+                  <textarea
+                    name="description"
+                    rows="2"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    placeholder="Topics covered in this session..."
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  />
                 </div>
 
                 {/* Auto Recording Checkbox */}
@@ -1421,7 +2000,6 @@ const AcademicLiveClassesPage = () => {
                     {teachers.map((t) => {
                       const tId = t.teacher_id || t.id || t.user_id || t.teacher;
                       const cleanName = (t.full_name || t.teacher_name || t.name || "Instructor").trim();
-
                       return (
                         <option key={tId} value={tId}>
                           {cleanName}
@@ -1459,13 +2037,6 @@ const AcademicLiveClassesPage = () => {
                   />
                 </div>
 
-                <div className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200/80 rounded-xl p-3 flex items-start gap-2">
-                  <Clock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">
-                    <strong>Instant Schedule Synchronization:</strong> Once saved, the new timing will update immediately for all students and tutors enrolled in this batch without needing a page refresh.
-                  </span>
-                </div>
-
                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                   <button
                     type="button"
@@ -1490,12 +2061,10 @@ const AcademicLiveClassesPage = () => {
           </div>
         )}
 
-        {/* Modern Popup Modal (Replaces browser alert/confirm) */}
+        {/* Modern Popup Modal */}
         {popupModal && (
           <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl max-w-md w-full p-6 md:p-7 shadow-2xl border border-slate-100 text-center relative overflow-hidden animate-in zoom-in-95 duration-200">
-              
-              {/* Decorative top gradient accent */}
               <div
                 className={`absolute top-0 left-0 right-0 h-2 ${
                   popupModal.type === "success"
@@ -1508,7 +2077,6 @@ const AcademicLiveClassesPage = () => {
                 }`}
               />
 
-              {/* Close X */}
               <button
                 onClick={() => setPopupModal(null)}
                 className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
@@ -1516,7 +2084,6 @@ const AcademicLiveClassesPage = () => {
                 ✕
               </button>
 
-              {/* Icon Container with glowing ring */}
               <div className="flex justify-center mb-4 mt-2">
                 {popupModal.type === "success" && (
                   <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center ring-8 ring-emerald-50/70 shadow-lg shadow-emerald-500/10">
@@ -1535,7 +2102,6 @@ const AcademicLiveClassesPage = () => {
                 )}
               </div>
 
-              {/* Title & Message */}
               <h3 className="text-xl font-bold text-slate-800 tracking-tight">
                 {popupModal.title}
               </h3>
@@ -1543,7 +2109,6 @@ const AcademicLiveClassesPage = () => {
                 {popupModal.message}
               </p>
 
-              {/* Highlight summary card if provided */}
               {popupModal.highlight && (
                 <div className="my-5 p-4 bg-slate-50 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
                   {popupModal.highlight.classTitle && (
@@ -1585,7 +2150,6 @@ const AcademicLiveClassesPage = () => {
                 </div>
               )}
 
-              {/* Buttons */}
               <div className="mt-6 flex items-center justify-center gap-3">
                 {popupModal.type === "confirm" ? (
                   <>

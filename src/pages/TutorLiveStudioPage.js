@@ -34,7 +34,16 @@ import {
   UserPlus,
   UserCheck,
   Hand,
-  RotateCcw
+  RotateCcw,
+  FileUp,
+  FileText,
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import {
   LiveKitRoom,
@@ -103,6 +112,46 @@ const getParticipantRole = (p) => {
   if (name.includes("instructor") || name.includes("tutor")) return "Instructor (Host)";
 
   return p.isHost ? "Instructor (Host)" : "Student";
+};
+
+// Resilient Video renderer that attaches WebRTC track directly to HTMLMediaElement for rock-solid mobile & desktop support
+const CameraStreamVideo = ({ trackRef, participant, isLocal = false, className = "w-full h-full object-cover" }) => {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const mediaTrack =
+      trackRef?.publication?.track ||
+      trackRef?.track ||
+      participant?.getTrackPublication(Track.Source.Camera)?.track;
+
+    if (mediaTrack) {
+      mediaTrack.attach(el);
+      if (el.paused) {
+        el.play().catch(() => {});
+      }
+      return () => {
+        try {
+          mediaTrack.detach(el);
+        } catch (_) {}
+      };
+    } else {
+      el.srcObject = null;
+    }
+  }, [trackRef, participant]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={isLocal}
+      data-role={isLocal ? "tutor-cam" : undefined}
+      data-participant={participant?.identity}
+      className={className}
+    />
+  );
 };
 
 // Inner Studio Component with room context
@@ -275,21 +324,54 @@ const LiveStudioStage = ({
     window.location.href = "/academic/live-classes";
   };
 
-  // Poll for student admissions (tutor view)
-  useEffect(() => {
-    if (isAcademic || !liveClass?.id) return;
+  const lastPendingCountRef = useRef(0);
 
+  // Knocking audio tone for instant notification
+  const playKnockChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.55);
+    } catch (e) {}
+  };
+
+  // Poll for student admissions (all classroom hosts/tutors)
+  useEffect(() => {
+    if (!liveClass?.id) return;
+
+    let isMounted = true;
     const fetchRequests = async () => {
       try {
         const res = await getJoinRequests(liveClass.id);
-        setPendingRequests(res.requests || []);
+        if (!isMounted) return;
+        const list = res.requests || [];
+        if (list.length > lastPendingCountRef.current) {
+          playKnockChime();
+        }
+        lastPendingCountRef.current = list.length;
+        setPendingRequests(list);
       } catch (e) {}
     };
 
     fetchRequests();
-    const interval = setInterval(fetchRequests, 3000);
-    return () => clearInterval(interval);
-  }, [liveClass?.id, isAcademic]);
+    const interval = setInterval(fetchRequests, 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [liveClass?.id]);
 
   const handleAdmit = async (studentId) => {
     setActionLoadingId(studentId);
@@ -362,6 +444,19 @@ const LiveStudioStage = ({
   const startPosRef = useRef({ x: 0, y: 0 });
   const snapshotRef = useRef(null);
 
+  // Document, Image & PDF Presentation State
+  const [presentedDoc, setPresentedDoc] = useState(null); // { name, type: 'image'|'pdf'|'text', page, totalPages, fitMode, zoom }
+  const presentedDocRef = useRef(null);
+  presentedDocRef.current = presentedDoc;
+  const [isDocLoading, setIsDocLoading] = useState(false);
+  const [docFitMode, setDocFitMode] = useState("page"); // 'page' | 'width'
+  const [docZoom, setDocZoom] = useState(1);
+  const [showPipVideo, setShowPipVideo] = useState(true);
+  const docInputRef = useRef(null);
+  const cachedPdfDocRef = useRef(null);
+  const cachedImgRef = useRef(null);
+  const cachedTextRef = useRef(null);
+
   // Compositor & Recorder Refs
   const compositorCanvasRef = useRef(null);
   const cameraVideoElRef = useRef(null);
@@ -371,12 +466,19 @@ const LiveStudioStage = ({
   const compTimerRef = useRef(null);
   const remoteVideoElsRef = useRef({});
 
-  // All Video Tracks
-  const tracks = useTracks([Track.Source.Camera]);
+  // All Video Tracks (include local tracks with onlySubscribed: false)
+  const tracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
   const boardThemeRef = useRef(boardTheme);
   boardThemeRef.current = boardTheme;
+
+  const localCamPub = localParticipant.getTrackPublication(Track.Source.Camera);
+  const localTrackRef =
+    tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) ||
+    (localCamPub?.track
+      ? { participant: localParticipant, publication: localCamPub, source: Track.Source.Camera }
+      : null);
 
   // Manual or automatic session timer restart
   const handleRestartTimer = async () => {
@@ -435,6 +537,18 @@ const LiveStudioStage = ({
     const timer = setInterval(calcElapsed, 1000);
     return () => clearInterval(timer);
   }, [liveClass?.id, liveClass?.actual_start]);
+
+  // Broadcast TIMER_RESET to students when tutor room connects
+  useEffect(() => {
+    if (!room || room.state !== "connected" || !isTeacher) return;
+    const currentStart = (liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`))
+      ? parseInt(sessionStorage.getItem(`isml_class_start_${liveClass.id}`), 10)
+      : Date.now();
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ type: "TIMER_RESET", startMs: currentStart }));
+      room.localParticipant.publishData(payload, { reliable: true });
+    } catch (_) {}
+  }, [room, room?.state, isTeacher, liveClass?.id]);
 
   // Format Elapsed Time
   const formatTime = (secs) => {
@@ -689,7 +803,20 @@ const LiveStudioStage = ({
 
   const handleToggleCamera = async () => {
     try {
-      await localParticipant.setCameraEnabled(!isCameraEnabled);
+      const nextState = !isCameraEnabled;
+      if (nextState) {
+        try {
+          await localParticipant.setCameraEnabled(true, {
+            facingMode: "user",
+            resolution: { width: 1280, height: 720, frameRate: 30 }
+          });
+        } catch (e1) {
+          console.warn("Camera enable with constraints failed, trying default:", e1);
+          await localParticipant.setCameraEnabled(true);
+        }
+      } else {
+        await localParticipant.setCameraEnabled(false);
+      }
     } catch (err) {
       console.warn("Camera toggle note:", err.message);
     }
@@ -738,6 +865,9 @@ const LiveStudioStage = ({
       const container = boardContainerRef.current;
       const canvas = canvasRef.current;
       if (!container || !canvas) return;
+
+      // If currently presenting a document, avoid squashing or resetting the canvas
+      if (presentedDocRef.current) return;
 
       const rect = container.getBoundingClientRect();
       const w = Math.round(rect.width);
@@ -800,17 +930,21 @@ const LiveStudioStage = ({
     };
   }, [activeTab, boardTheme]);
 
-  // Direct 1:1 pixel coordinate helper (Zero-offset, sub-pixel accurate)
+  // Direct 1:1 pixel coordinate helper (Zero-offset, sub-pixel scale-aware)
   const getCanvasCoords = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
 
     const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
 
-    const x = Math.max(0, Math.min(canvas.width, clientX - rect.left));
-    const y = Math.max(0, Math.min(canvas.height, clientY - rect.top));
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const x = Math.max(0, Math.min(canvas.width, (clientX - rect.left) * scaleX));
+    const y = Math.max(0, Math.min(canvas.height, (clientY - rect.top) * scaleY));
 
     return { x, y };
   };
@@ -971,7 +1105,402 @@ const LiveStudioStage = ({
     }
   };
 
-  // Whiteboard Real-Time Broadcaster to Room Data Channel
+  // Dynamic PDF.js library loader from CDN
+  const loadPdfJs = () => {
+    return new Promise((resolve, reject) => {
+      if (window.pdfjsLib) {
+        return resolve(window.pdfjsLib);
+      }
+      const existing = document.getElementById("pdfjs-cdn-script");
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.pdfjsLib));
+        existing.addEventListener("error", reject);
+        return;
+      }
+      const script = document.createElement("script");
+      script.id = "pdfjs-cdn-script";
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      script.onload = () => {
+        try {
+          if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          }
+        } catch (_) {}
+        resolve(window.pdfjsLib);
+      };
+      script.onerror = () => reject(new Error("Failed to load PDF viewer engine. Check internet connection."));
+      document.head.appendChild(script);
+    });
+  };
+
+  // Render a specific PDF page onto the Whiteboard canvas with crisp HD and responsive fit
+  const renderPdfPageToCanvas = async (pdfDoc, pageNum, fileName, fitMode = docFitMode, zoom = docZoom) => {
+    const canvas = canvasRef.current;
+    const container = boardContainerRef.current;
+    if (!canvas || !pdfDoc || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const contW = Math.max(300, Math.round(containerRect.width));
+    const contH = Math.max(300, Math.round(containerRect.height));
+
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const pdfW = unscaledViewport.width;
+      const pdfH = unscaledViewport.height;
+
+      let targetW, targetH;
+      if (fitMode === "width") {
+        // Fit to Width: Document width matches container (or scaled by zoom)
+        // On mobile/desktop, this makes the document wide and comfortably readable!
+        targetW = Math.round((contW - (contW < 640 ? 12 : 24)) * zoom);
+        targetH = Math.round(targetW * (pdfH / pdfW));
+      } else {
+        // Fit to Page: Document fits completely within container without vertical or horizontal cutoff
+        const padX = contW < 640 ? 12 : 32;
+        const padY = contH < 640 ? 12 : 32;
+        const scaleX = (contW - padX) / pdfW;
+        const scaleY = (contH - padY) / pdfH;
+        const fitScale = Math.min(scaleX, scaleY) * zoom;
+        targetW = Math.round(pdfW * fitScale);
+        targetH = Math.round(pdfH * fitScale);
+      }
+
+      // Render at 2.0x DPR for crystal-clear HD text
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const renderViewport = page.getViewport({ scale: (targetW / pdfW) * dpr });
+
+      const offscreen = document.createElement("canvas");
+      offscreen.width = Math.round(renderViewport.width);
+      offscreen.height = Math.round(renderViewport.height);
+      const offCtx = offscreen.getContext("2d");
+
+      await page.render({ canvasContext: offCtx, viewport: renderViewport }).promise;
+
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+
+      ctx.drawImage(offscreen, 0, 0, targetW, targetH);
+
+      historyRef.current = [ctx.getImageData(0, 0, targetW, targetH)];
+      redoRef.current = [];
+
+      const docData = {
+        name: fileName,
+        type: "pdf",
+        page: pageNum,
+        totalPages: pdfDoc.numPages,
+        fitMode,
+        zoom
+      };
+      setPresentedDoc(docData);
+      presentedDocRef.current = docData;
+
+      broadcastWhiteboardState({ docInfo: docData });
+    } catch (err) {
+      console.error("Error rendering PDF page:", err);
+      alert("Could not render page " + pageNum + ": " + err.message);
+    }
+  };
+
+  // Render an Image file fitted nicely onto the Whiteboard canvas
+  const renderImageToCanvas = (img, fileName, fitMode = docFitMode, zoom = docZoom) => {
+    const canvas = canvasRef.current;
+    const container = boardContainerRef.current;
+    if (!canvas || !img || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const contW = Math.max(300, Math.round(containerRect.width));
+    const contH = Math.max(300, Math.round(containerRect.height));
+
+    const imgW = img.naturalWidth || img.width;
+    const imgH = img.naturalHeight || img.height;
+
+    let targetW, targetH;
+    if (fitMode === "width") {
+      targetW = Math.round((contW - (contW < 640 ? 12 : 24)) * zoom);
+      targetH = Math.round(targetW * (imgH / imgW));
+    } else {
+      const padX = contW < 640 ? 12 : 32;
+      const padY = contH < 640 ? 12 : 32;
+      const scaleX = (contW - padX) / imgW;
+      const scaleY = (contH - padY) / imgH;
+      const fitScale = Math.min(scaleX, scaleY) * zoom;
+      targetW = Math.round(imgW * fitScale);
+      targetH = Math.round(imgH * fitScale);
+    }
+
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    historyRef.current = [ctx.getImageData(0, 0, targetW, targetH)];
+    redoRef.current = [];
+
+    const docData = {
+      name: fileName,
+      type: "image",
+      page: 1,
+      totalPages: 1,
+      fitMode,
+      zoom
+    };
+    setPresentedDoc(docData);
+    presentedDocRef.current = docData;
+
+    broadcastWhiteboardState({ docInfo: docData });
+  };
+
+  // Render formatted Text or Notes document onto Whiteboard canvas (With multi-page pagination!)
+  const renderTextToCanvas = (text, fileName, pageNum = 1) => {
+    const canvas = canvasRef.current;
+    const container = boardContainerRef.current;
+    if (!canvas || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const contW = Math.max(300, Math.round(containerRect.width));
+    const contH = Math.max(300, Math.round(containerRect.height));
+
+    const sheetW = Math.min(contW - (contW < 640 ? 12 : 32), 850);
+    const sheetH = Math.max(contH - (contH < 640 ? 12 : 32), 600);
+
+    canvas.width = sheetW;
+    canvas.height = sheetH;
+    const ctx = canvas.getContext("2d");
+
+    const pad = Math.max(16, Math.round(sheetW * 0.04));
+
+    ctx.font = "16px system-ui, -apple-system, sans-serif";
+    const rawLines = text.split("\n");
+    const wrappedLines = [];
+    const maxTextWidth = sheetW - pad * 2 - 24;
+
+    for (const raw of rawLines) {
+      if (!raw.trim()) {
+        wrappedLines.push("");
+        continue;
+      }
+      const words = raw.split(" ");
+      let cur = "";
+      for (const w of words) {
+        const test = cur ? cur + " " + w : w;
+        if (ctx.measureText(test).width > maxTextWidth) {
+          wrappedLines.push(cur);
+          cur = w;
+        } else {
+          cur = test;
+        }
+      }
+      if (cur) wrappedLines.push(cur);
+    }
+
+    const lineHeight = 28;
+    const availableHeightForText = sheetH - 120;
+    const linesPerPage = Math.max(8, Math.floor(availableHeightForText / lineHeight));
+    const totalPages = Math.max(1, Math.ceil(wrappedLines.length / linesPerPage));
+    const safePage = Math.min(Math.max(1, pageNum), totalPages);
+
+    const startIdx = (safePage - 1) * linesPerPage;
+    const pageLines = wrappedLines.slice(startIdx, startIdx + linesPerPage);
+
+    ctx.save();
+    ctx.fillStyle = boardTheme === "dark" ? "#111827" : "#ffffff";
+    if (ctx.roundRect) {
+      ctx.roundRect(0, 0, sheetW, sheetH, 16);
+    } else {
+      ctx.rect(0, 0, sheetW, sheetH);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = boardTheme === "dark" ? "#38bdf8" : "#0284c7";
+    ctx.font = "bold 18px system-ui, sans-serif";
+    ctx.fillText("📄 " + fileName, pad, 40);
+
+    ctx.fillStyle = boardTheme === "dark" ? "#94a3b8" : "#64748b";
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.fillText(`Page ${safePage} of ${totalPages}`, sheetW - pad - 100, 40);
+
+    ctx.strokeStyle = boardTheme === "dark" ? "#334155" : "#e2e8f0";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad, 56);
+    ctx.lineTo(sheetW - pad, 56);
+    ctx.stroke();
+
+    ctx.fillStyle = boardTheme === "dark" ? "#f1f5f9" : "#1e293b";
+    ctx.font = "15px system-ui, sans-serif";
+    let y = 90;
+    for (const l of pageLines) {
+      ctx.fillText(l, pad, y);
+      y += lineHeight;
+    }
+    ctx.restore();
+
+    historyRef.current = [ctx.getImageData(0, 0, sheetW, sheetH)];
+    redoRef.current = [];
+
+    const docData = {
+      name: fileName,
+      type: "text",
+      page: safePage,
+      totalPages,
+      rawText: text
+    };
+    setPresentedDoc(docData);
+    presentedDocRef.current = docData;
+
+    broadcastWhiteboardState({ docInfo: docData });
+  };
+
+  // Toggle Fit Mode (Page vs Width)
+  const toggleFitMode = async () => {
+    const nextMode = docFitMode === "width" ? "page" : "width";
+    setDocFitMode(nextMode);
+    if (!presentedDoc) return;
+    if (presentedDoc.type === "pdf" && cachedPdfDocRef.current?.pdf) {
+      setIsDocLoading(true);
+      await renderPdfPageToCanvas(cachedPdfDocRef.current.pdf, presentedDoc.page, presentedDoc.name, nextMode, docZoom);
+      setIsDocLoading(false);
+    } else if (presentedDoc.type === "image" && cachedImgRef.current?.img) {
+      renderImageToCanvas(cachedImgRef.current.img, presentedDoc.name, nextMode, docZoom);
+    }
+  };
+
+  // Zoom In / Zoom Out
+  const handleZoomChange = async (delta) => {
+    const nextZoom = Math.max(0.6, Math.min(2.5, Math.round((docZoom + delta) * 10) / 10));
+    setDocZoom(nextZoom);
+    if (!presentedDoc) return;
+    if (presentedDoc.type === "pdf" && cachedPdfDocRef.current?.pdf) {
+      setIsDocLoading(true);
+      await renderPdfPageToCanvas(cachedPdfDocRef.current.pdf, presentedDoc.page, presentedDoc.name, docFitMode, nextZoom);
+      setIsDocLoading(false);
+    } else if (presentedDoc.type === "image" && cachedImgRef.current?.img) {
+      renderImageToCanvas(cachedImgRef.current.img, presentedDoc.name, docFitMode, nextZoom);
+    }
+  };
+
+  // Handle Document / Image file upload selection
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsDocLoading(true);
+    if (activeTab !== "whiteboard") {
+      setActiveTab("whiteboard");
+    }
+
+    try {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|svg|gif)$/i.test(file.name);
+
+      if (isPdf) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjs = await loadPdfJs();
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        cachedPdfDocRef.current = { pdf, fileName: file.name };
+        cachedImgRef.current = null;
+        cachedTextRef.current = null;
+        await renderPdfPageToCanvas(pdf, 1, file.name, docFitMode, docZoom);
+      } else if (isImg) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const img = new Image();
+          img.onload = () => {
+            cachedImgRef.current = { img, fileName: file.name };
+            cachedPdfDocRef.current = null;
+            cachedTextRef.current = null;
+            renderImageToCanvas(img, file.name, docFitMode, docZoom);
+            setIsDocLoading(false);
+          };
+          img.onerror = () => {
+            alert("Could not load image file.");
+            setIsDocLoading(false);
+          };
+          img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+        return;
+      } else {
+        const text = await file.text();
+        cachedTextRef.current = { text, fileName: file.name };
+        cachedPdfDocRef.current = null;
+        cachedImgRef.current = null;
+        renderTextToCanvas(text, file.name, 1);
+      }
+    } catch (err) {
+      console.error("Error presenting document:", err);
+      alert("Failed to load document: " + err.message);
+    } finally {
+      setIsDocLoading(false);
+      if (docInputRef.current) docInputRef.current.value = "";
+    }
+  };
+
+  const handlePrevPage = async () => {
+    if (!presentedDoc || presentedDoc.page <= 1) return;
+    const newPage = presentedDoc.page - 1;
+    if (presentedDoc.type === "pdf" && cachedPdfDocRef.current?.pdf) {
+      setIsDocLoading(true);
+      await renderPdfPageToCanvas(cachedPdfDocRef.current.pdf, newPage, presentedDoc.name, docFitMode, docZoom);
+      setIsDocLoading(false);
+    } else if (presentedDoc.type === "text" && cachedTextRef.current?.text) {
+      renderTextToCanvas(cachedTextRef.current.text, presentedDoc.name, newPage);
+    }
+  };
+
+  const handleNextPage = async () => {
+    if (!presentedDoc || presentedDoc.page >= presentedDoc.totalPages) return;
+    const newPage = presentedDoc.page + 1;
+    if (presentedDoc.type === "pdf" && cachedPdfDocRef.current?.pdf) {
+      setIsDocLoading(true);
+      await renderPdfPageToCanvas(cachedPdfDocRef.current.pdf, newPage, presentedDoc.name, docFitMode, docZoom);
+      setIsDocLoading(false);
+    } else if (presentedDoc.type === "text" && cachedTextRef.current?.text) {
+      renderTextToCanvas(cachedTextRef.current.text, presentedDoc.name, newPage);
+    }
+  };
+
+  const handleClearAnnotations = () => {
+    if (!presentedDoc) return;
+    if (presentedDoc.type === "pdf" && cachedPdfDocRef.current?.pdf) {
+      renderPdfPageToCanvas(cachedPdfDocRef.current.pdf, presentedDoc.page, presentedDoc.name, docFitMode, docZoom);
+    } else if (presentedDoc.type === "image" && cachedImgRef.current?.img) {
+      renderImageToCanvas(cachedImgRef.current.img, presentedDoc.name, docFitMode, docZoom);
+    } else if (presentedDoc.type === "text" && cachedTextRef.current?.text) {
+      renderTextToCanvas(cachedTextRef.current.text, presentedDoc.name, presentedDoc.page);
+    }
+  };
+
+  const handleCloseDocument = () => {
+    setPresentedDoc(null);
+    presentedDocRef.current = null;
+    cachedPdfDocRef.current = null;
+    cachedImgRef.current = null;
+    cachedTextRef.current = null;
+
+    const container = boardContainerRef.current;
+    const canvas = canvasRef.current;
+    if (container && canvas) {
+      const rect = container.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      drawBackground(ctx, w, h, boardTheme);
+      historyRef.current = [ctx.getImageData(0, 0, w, h)];
+      redoRef.current = [];
+    }
+
+    broadcastWhiteboardState({ docInfo: null });
+  };
+
+  // Whiteboard Real-Time Broadcaster to Room Data Channel (Safe transmission under 64KB WebRTC packet limits)
   const broadcastWhiteboardState = (override = {}) => {
     try {
       if (!room || room.state !== "connected" || !room.localParticipant) {
@@ -979,8 +1508,20 @@ const LiveStudioStage = ({
       }
       const canvas = canvasRef.current;
       let dataUrl = null;
-      if (canvas) {
-        dataUrl = canvas.toDataURL("image/webp", 0.6);
+      if (canvas && canvas.width > 0 && canvas.height > 0) {
+        const maxDim = 1200;
+        if (canvas.width > maxDim || canvas.height > maxDim) {
+          const scale = Math.min(maxDim / canvas.width, maxDim / canvas.height);
+          const syncCanvas = document.createElement("canvas");
+          syncCanvas.width = Math.round(canvas.width * scale);
+          syncCanvas.height = Math.round(canvas.height * scale);
+          const sCtx = syncCanvas.getContext("2d");
+          sCtx.drawImage(canvas, 0, 0, syncCanvas.width, syncCanvas.height);
+          dataUrl = syncCanvas.toDataURL("image/webp", 0.55);
+        } else {
+          dataUrl = canvas.toDataURL("image/webp", 0.55);
+        }
+
         if (liveClass?.id) {
           try {
             localStorage.setItem(`isml_wb_canvas_${liveClass.id}`, dataUrl);
@@ -992,6 +1533,7 @@ const LiveStudioStage = ({
         activeTab,
         boardTheme,
         dataUrl,
+        docInfo: presentedDocRef.current,
         ...override
       });
       room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
@@ -1054,7 +1596,12 @@ const LiveStudioStage = ({
     if (liveClass?.id) {
       localStorage.removeItem(`isml_wb_canvas_${liveClass.id}`);
     }
-    broadcastWhiteboardState();
+    setPresentedDoc(null);
+    presentedDocRef.current = null;
+    cachedPdfDocRef.current = null;
+    cachedImgRef.current = null;
+    cachedTextRef.current = null;
+    broadcastWhiteboardState({ docInfo: null });
   };
 
   // Broadcast Tab Change or Board Theme Change to all attendees
@@ -1158,17 +1705,33 @@ const LiveStudioStage = ({
       }
 
       // 3. Render Video Stream OR Stylized Avatar
-      const isVideoLive = p.isCameraEnabled && p.videoEl && p.videoEl.readyState >= 2 && p.videoEl.videoWidth > 0;
+      let vEl = p.videoEl;
+      if (!vEl || vEl.videoWidth === 0) {
+        if (p.isHost) {
+          const domTutorVid = document.querySelector('video[data-role="tutor-cam"]');
+          if (domTutorVid && domTutorVid.videoWidth > 0) vEl = domTutorVid;
+        } else if (p.identity) {
+          const domRemoteVid = document.querySelector(`video[data-participant="${p.identity}"]`);
+          if (domRemoteVid && domRemoteVid.videoWidth > 0) vEl = domRemoteVid;
+        }
+      }
+
+      const isVideoLive = !!(
+        p.isCameraEnabled &&
+        vEl &&
+        vEl.videoWidth > 0 &&
+        vEl.videoHeight > 0
+      );
       if (isVideoLive) {
         try {
-          const vw = p.videoEl.videoWidth;
-          const vh = p.videoEl.videoHeight;
+          const vw = vEl.videoWidth || 640;
+          const vh = vEl.videoHeight || 360;
           const scale = Math.max(w / vw, h / vh);
           const sw = w / scale;
           const sh = h / scale;
-          const sx = (vw - sw) / 2;
-          const sy = (vh - sh) / 2;
-          ctx.drawImage(p.videoEl, sx, sy, sw, sh, x, y, w, h);
+          const sx = Math.max(0, (vw - sw) / 2);
+          const sy = Math.max(0, (vh - sh) / 2);
+          ctx.drawImage(vEl, sx, sy, sw, sh, x, y, w, h);
         } catch (e) {
           // Fallback if drawImage encounters a transient frame state
         }
@@ -1419,50 +1982,6 @@ const LiveStudioStage = ({
       ctx.restore();
     };
 
-    // 1. Connect local camera track to hidden offscreen video element
-    const localCamPub = localParticipant.getTrackPublication(Track.Source.Camera);
-    const localCamTrack =
-      localCamPub?.track?.mediaStreamTrack ||
-      tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.publication?.track?.mediaStreamTrack ||
-      tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.track?.mediaStreamTrack;
-
-    if (cameraVideoElRef.current) {
-      if (isCameraEnabled && localCamTrack) {
-        const curStream = cameraVideoElRef.current.srcObject;
-        if (!curStream || curStream.getVideoTracks()[0] !== localCamTrack) {
-          cameraVideoElRef.current.srcObject = new MediaStream([localCamTrack]);
-        }
-        if (cameraVideoElRef.current.paused) {
-          cameraVideoElRef.current.play().catch(() => {});
-        }
-      } else if (!isCameraEnabled && cameraVideoElRef.current.srcObject) {
-        cameraVideoElRef.current.srcObject = null;
-      }
-    }
-
-    // 2. Connect remote participants' camera tracks to their video elements
-    remoteParticipants.forEach((p) => {
-      const rEl = remoteVideoElsRef.current[p.identity];
-      if (!rEl) return;
-      const pTrack = tracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
-      const rCamTrack =
-        pTrack?.publication?.track?.mediaStreamTrack ||
-        pTrack?.track?.mediaStreamTrack ||
-        p.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
-
-      if (p.isCameraEnabled && rCamTrack) {
-        const curStream = rEl.srcObject;
-        if (!curStream || curStream.getVideoTracks()[0] !== rCamTrack) {
-          rEl.srcObject = new MediaStream([rCamTrack]);
-        }
-        if (rEl.paused) {
-          rEl.play().catch(() => {});
-        }
-      } else if (!p.isCameraEnabled && rEl.srcObject) {
-        rEl.srcObject = null;
-      }
-    });
-
     // Initialize 30fps Compositor Loop & MediaRecorder (Only Teacher / Host records)
     if (isAcademic) return;
 
@@ -1475,7 +1994,6 @@ const LiveStudioStage = ({
     compTimerRef.current = setInterval(() => {
       const timeNow = Date.now();
 
-      // Assemble all participants (Tutor + Remote Students) from stable refs
       const currentLocal = localParticipantRef.current;
       const currentRemotes = remoteParticipantsRef.current || [];
       const currentRaised = raisedHandsRef.current || {};
@@ -1483,6 +2001,61 @@ const LiveStudioStage = ({
       const currentActiveTab = activeTabRef.current;
       const currentBoardTheme = boardThemeRef.current;
 
+      // 1. Continually sync Local Tutor Camera Track to cameraVideoElRef
+      if (cameraVideoElRef.current) {
+        const localCamPub = localParticipantRef.current?.getTrackPublication(Track.Source.Camera);
+        const localLiveKitTrack = localCamPub?.track;
+        const localMediaTrack =
+          localLiveKitTrack?.mediaStreamTrack ||
+          currentTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.publication?.track?.mediaStreamTrack ||
+          currentTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.track?.mediaStreamTrack;
+
+        if (isCameraEnabledRef.current && (localLiveKitTrack || localMediaTrack)) {
+          const curStream = cameraVideoElRef.current.srcObject;
+          if (!curStream || (localMediaTrack && curStream.getVideoTracks()[0] !== localMediaTrack)) {
+            if (localLiveKitTrack && typeof localLiveKitTrack.attach === "function") {
+              localLiveKitTrack.attach(cameraVideoElRef.current);
+            } else if (localMediaTrack) {
+              cameraVideoElRef.current.srcObject = new MediaStream([localMediaTrack]);
+            }
+            if (cameraVideoElRef.current.paused) {
+              cameraVideoElRef.current.play().catch(() => {});
+            }
+          }
+        } else if (!isCameraEnabledRef.current && cameraVideoElRef.current.srcObject) {
+          cameraVideoElRef.current.srcObject = null;
+        }
+      }
+
+      // 2. Continually sync Remote Participants' Camera Tracks
+      currentRemotes.forEach((p) => {
+        const rEl = remoteVideoElsRef.current[p.identity];
+        if (!rEl) return;
+        const pTrackRef = currentTracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
+        const pCamPub = p.getTrackPublication(Track.Source.Camera);
+        const pLiveKitTrack = pCamPub?.track || pTrackRef?.publication?.track || pTrackRef?.track;
+        const pMediaTrack = pLiveKitTrack?.mediaStreamTrack;
+
+        const isCamOn = !!(p.isCameraEnabled || (pTrackRef && !pTrackRef.publication?.isMuted) || pLiveKitTrack);
+
+        if (isCamOn && (pLiveKitTrack || pMediaTrack)) {
+          const curStream = rEl.srcObject;
+          if (!curStream || (pMediaTrack && curStream.getVideoTracks()[0] !== pMediaTrack)) {
+            if (pLiveKitTrack && typeof pLiveKitTrack.attach === "function") {
+              pLiveKitTrack.attach(rEl);
+            } else if (pMediaTrack) {
+              rEl.srcObject = new MediaStream([pMediaTrack]);
+            }
+            if (rEl.paused) {
+              rEl.play().catch(() => {});
+            }
+          }
+        } else if (!isCamOn && rEl.srcObject) {
+          rEl.srcObject = null;
+        }
+      });
+
+      // Assemble all participants (Tutor + Remote Students) from stable refs
       const allParticipants = [
         {
           identity: currentLocal?.identity || "tutor",
@@ -1496,7 +2069,10 @@ const LiveStudioStage = ({
         ...currentRemotes.map((p) => {
           const isHandRaised = !!currentRaised[p.identity];
           const rEl = remoteVideoElsRef.current[p.identity];
-          const isCamOn = !!(p.isCameraEnabled || currentTracks.some((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera && !t.publication?.isMuted));
+          const pTrackRef = currentTracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
+          const pCamPub = p.getTrackPublication(Track.Source.Camera);
+          const pLiveKitTrack = pCamPub?.track || pTrackRef?.publication?.track || pTrackRef?.track;
+          const isCamOn = !!(p.isCameraEnabled || (pTrackRef && !pTrackRef.publication?.isMuted) || pLiveKitTrack);
           const pRole = getParticipantRole(p);
           return {
             identity: p.identity,
@@ -1642,6 +2218,51 @@ const LiveStudioStage = ({
       if (compTimerRef.current) clearInterval(compTimerRef.current);
     };
   }, [liveClass?.id, isAcademic]);
+
+  // Reactive synchronization of camera video elements whenever tracks or camera toggles update
+  useEffect(() => {
+    if (cameraVideoElRef.current) {
+      const localCamPub = localParticipant.getTrackPublication(Track.Source.Camera);
+      const localTrack =
+        localCamPub?.track ||
+        tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.publication?.track ||
+        tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.track;
+
+      if (isCameraEnabled && localTrack) {
+        if (typeof localTrack.attach === "function") {
+          localTrack.attach(cameraVideoElRef.current);
+        } else if (localTrack.mediaStreamTrack) {
+          cameraVideoElRef.current.srcObject = new MediaStream([localTrack.mediaStreamTrack]);
+        }
+        if (cameraVideoElRef.current.paused) {
+          cameraVideoElRef.current.play().catch(() => {});
+        }
+      } else if (!isCameraEnabled && cameraVideoElRef.current.srcObject) {
+        cameraVideoElRef.current.srcObject = null;
+      }
+    }
+
+    remoteParticipants.forEach((p) => {
+      const rEl = remoteVideoElsRef.current[p.identity];
+      if (!rEl) return;
+      const pTrack = tracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
+      const track = p.getTrackPublication(Track.Source.Camera)?.track || pTrack?.publication?.track || pTrack?.track;
+      const isCamOn = !!(p.isCameraEnabled || (pTrack && !pTrack.publication?.isMuted) || track);
+
+      if (isCamOn && track) {
+        if (typeof track.attach === "function") {
+          track.attach(rEl);
+        } else if (track.mediaStreamTrack) {
+          rEl.srcObject = new MediaStream([track.mediaStreamTrack]);
+        }
+        if (rEl.paused) {
+          rEl.play().catch(() => {});
+        }
+      } else if (!isCamOn && rEl.srcObject) {
+        rEl.srcObject = null;
+      }
+    });
+  }, [tracks, isCameraEnabled, remoteParticipants, localParticipant]);
 
   // Comprehensive Room Data Channel Listener (Chat, Hand Raise, Hand Lower, Class Ended)
   useEffect(() => {
@@ -1809,22 +2430,28 @@ const LiveStudioStage = ({
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-white font-sans overflow-hidden">
-      {/* Active Offscreen Canvas & Participant Video Elements for HD Recording (Kept active in DOM tree for GPU decoding) */}
+      {/* Active Compositor Canvas & Participant Video Elements for HD Recording (Kept active inside viewport with opacity: 0.001 so Chromium GPU renders all video frames) */}
       <div
         style={{
           position: "fixed",
-          top: "-9999px",
-          left: "-9999px",
-          width: "640px",
-          height: "360px",
-          opacity: 0,
+          bottom: 0,
+          right: 0,
+          width: "320px",
+          height: "180px",
+          opacity: 0.001,
           pointerEvents: "none",
           zIndex: -9999
         }}
         aria-hidden="true"
       >
         <canvas ref={compositorCanvasRef} width={1280} height={720} />
-        <video ref={cameraVideoElRef} autoPlay playsInline muted />
+        <video
+          ref={cameraVideoElRef}
+          autoPlay
+          playsInline
+          muted
+          style={{ width: "160px", height: "90px" }}
+        />
         {remoteParticipants.map((p) => (
           <video
             key={p.identity}
@@ -1838,6 +2465,7 @@ const LiveStudioStage = ({
             autoPlay
             playsInline
             muted
+            style={{ width: "160px", height: "90px" }}
           />
         ))}
       </div>
@@ -1889,15 +2517,27 @@ const LiveStudioStage = ({
           </div>
 
           {isAcademic ? (
-            <button
-              onClick={handleLeaveInspection}
-              className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-600/50 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-              title="Leave inspection without ending the live class"
-            >
-              <LogOut className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Leave Inspection</span>
-              <span className="sm:hidden">Leave</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {pendingRequests.length > 0 && (
+                <button
+                  onClick={() => setShowAdmissionsModal(true)}
+                  className="flex items-center gap-1 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all cursor-pointer animate-pulse"
+                >
+                  <UserPlus className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Admissions</span>
+                  <span>({pendingRequests.length})</span>
+                </button>
+              )}
+              <button
+                onClick={handleLeaveInspection}
+                className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-600/50 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                title="Leave inspection without ending the live class"
+              >
+                <LogOut className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Leave Inspection</span>
+                <span className="sm:hidden">Leave</span>
+              </button>
+            </div>
           ) : (
             <>
               {/* Hand Raised Alert Button in Header */}
@@ -2069,6 +2709,35 @@ const LiveStudioStage = ({
 
                 <div className="h-5 w-px bg-slate-700/60 shrink-0" />
 
+                {/* Document & Image Presentation Upload Button */}
+                <input
+                  type="file"
+                  ref={docInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*,application/pdf,.txt,.md"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => docInputRef.current?.click()}
+                  disabled={isDocLoading}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md sm:rounded-lg text-xs font-semibold shadow-md transition-all cursor-pointer shrink-0 ${
+                    presentedDoc
+                      ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/25 ring-1 ring-emerald-400"
+                      : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20"
+                  }`}
+                  title="Upload and present Images, PDF slides, or Documents directly on the whiteboard"
+                >
+                  {isDocLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white" />
+                  ) : (
+                    <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  )}
+                  <span className="hidden sm:inline">{presentedDoc ? "Change Doc" : "Present Doc / Image"}</span>
+                  <span className="sm:hidden">{presentedDoc ? "Change" : "Doc"}</span>
+                </button>
+
+                <div className="h-5 w-px bg-slate-700/60 shrink-0" />
+
                 {/* Color Swatches + Custom Picker (Visible on Mobile & Desktop) */}
                 <div className="flex items-center gap-1 bg-slate-800/80 p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-slate-700/60 shrink-0">
                   {WHITEBOARD_COLORS.slice(0, 4).map((c) => (
@@ -2168,12 +2837,11 @@ const LiveStudioStage = ({
               <div className="flex-1 min-h-0 min-w-0 w-full h-full flex items-center justify-center p-0 sm:p-2 relative overflow-hidden bg-slate-950/90">
                 <div
                   ref={boardContainerRef}
-                  className={`relative aspect-video max-w-full max-h-full w-full h-auto flex items-center justify-center rounded-none sm:rounded-2xl overflow-hidden shadow-2xl border-0 sm:border transition-all ${
+                  className={`relative max-w-full max-h-full w-full h-full flex-1 flex items-center justify-center rounded-none sm:rounded-2xl overflow-auto shadow-2xl border-0 sm:border transition-all ${
                     boardTheme === "dark"
                       ? "bg-[#090d16] border-slate-700/80 shadow-black/80"
                       : "bg-[#f8fafc] border-slate-300/80 shadow-slate-900/10"
                   }`}
-                  style={{ aspectRatio: "16 / 9" }}
                 >
                   <canvas
                     ref={canvasRef}
@@ -2181,7 +2849,7 @@ const LiveStudioStage = ({
                     onPointerMove={draw}
                     onPointerUp={stopDrawing}
                     onPointerCancel={stopDrawing}
-                    className={`w-full h-full block touch-none select-none ${
+                    className={`block touch-none select-none my-auto mx-auto shadow-2xl rounded-xl transition-shadow ${
                       activeTool === "eraser"
                         ? "cursor-cell"
                         : activeTool === "text"
@@ -2193,21 +2861,136 @@ const LiveStudioStage = ({
                   {/* Floating HD Studio Badge */}
                   <div className="absolute top-1.5 sm:top-3 left-1.5 sm:left-3 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] sm:text-[11px] font-medium text-slate-300 pointer-events-none select-none">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span className="hidden sm:inline">1080p Studio Board • 16:9</span>
-                    <span className="sm:hidden font-mono">16:9 HD</span>
+                    <span className="hidden sm:inline">Studio Board • HD Live</span>
+                    <span className="sm:hidden font-mono">HD Live</span>
                   </div>
 
-                  {/* Floating Tutor PiP in Whiteboard Corner */}
-                  {isCameraEnabled && (
-                    <div className="absolute bottom-1.5 sm:bottom-4 right-1.5 sm:right-4 w-24 sm:w-44 md:w-52 aspect-video rounded-lg sm:rounded-2xl overflow-hidden shadow-2xl border sm:border-2 border-blue-500 bg-slate-900 z-10 pointer-events-none">
-                      <VideoTrack
-                        trackRef={tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)}
+                  {/* Floating Document Presentation Control Bar */}
+                  {presentedDoc && (
+                    <div className="absolute top-1.5 sm:top-3 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center gap-1 sm:gap-1.5 bg-slate-900/95 backdrop-blur-2xl border border-blue-500/50 shadow-2xl px-2 sm:px-3 py-1 rounded-xl sm:rounded-2xl text-slate-100 text-xs max-w-[96vw] overflow-x-auto no-scrollbar">
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-blue-950/60 border border-blue-500/30 text-blue-300 font-semibold text-[11px] sm:text-xs shrink-0 max-w-[100px] xs:max-w-[140px] sm:max-w-[200px]">
+                        {presentedDoc.type === "image" ? (
+                          <ImageIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        )}
+                        <span className="truncate">{presentedDoc.name}</span>
+                      </div>
+
+                      {presentedDoc.totalPages > 1 && (
+                        <div className="flex items-center gap-0.5 bg-slate-800/90 px-1 py-0.5 rounded-lg border border-slate-700/80 shrink-0">
+                          <button
+                            onClick={handlePrevPage}
+                            disabled={presentedDoc.page <= 1 || isDocLoading}
+                            className="p-1 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-300 hover:text-white cursor-pointer transition-all"
+                            title="Previous Page"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="text-[10px] sm:text-[11px] font-mono px-1 font-bold text-slate-200">
+                            {presentedDoc.page} / {presentedDoc.totalPages}
+                          </span>
+                          <button
+                            onClick={handleNextPage}
+                            disabled={presentedDoc.page >= presentedDoc.totalPages || isDocLoading}
+                            className="p-1 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-300 hover:text-white cursor-pointer transition-all"
+                            title="Next Page"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Fit Mode Toggle */}
+                      <button
+                        onClick={toggleFitMode}
+                        className={`px-2 py-1 rounded-lg font-semibold text-[10px] sm:text-xs transition-all border shrink-0 cursor-pointer ${
+                          docFitMode === "width"
+                            ? "bg-blue-600 text-white border-blue-400 shadow-sm"
+                            : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                        }`}
+                        title={docFitMode === "width" ? "Switch to Fit Page" : "Switch to Fit Width"}
+                      >
+                        {docFitMode === "width" ? "Fit Width" : "Fit Page"}
+                      </button>
+
+                      {/* Zoom Controls */}
+                      <div className="flex items-center gap-0.5 bg-slate-800/90 px-1 py-0.5 rounded-lg border border-slate-700/80 shrink-0">
+                        <button
+                          onClick={() => handleZoomChange(-0.2)}
+                          className="p-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded cursor-pointer"
+                          title="Zoom Out"
+                        >
+                          <ZoomOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        </button>
+                        <span className="text-[10px] font-mono px-1 text-slate-300 font-semibold hidden xs:inline">
+                          {Math.round(docZoom * 100)}%
+                        </span>
+                        <button
+                          onClick={() => handleZoomChange(0.2)}
+                          className="p-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded cursor-pointer"
+                          title="Zoom In"
+                        >
+                          <ZoomIn className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        </button>
+                      </div>
+
+                      {isDocLoading && (
+                        <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin shrink-0" />
+                      )}
+
+                      <div className="h-3.5 w-px bg-slate-700/80 mx-0.5 shrink-0" />
+
+                      <button
+                        onClick={handleClearAnnotations}
+                        className="px-1.5 sm:px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] sm:text-[11px] font-medium text-slate-300 hover:text-white rounded-lg transition-all border border-slate-700 shrink-0 cursor-pointer"
+                        title="Clear hand-drawn marks from this page"
+                      >
+                        <span className="hidden sm:inline">Reset Marks</span>
+                        <span className="sm:hidden">Reset</span>
+                      </button>
+
+                      <button
+                        onClick={handleCloseDocument}
+                        className="p-1 hover:bg-red-600/80 text-slate-400 hover:text-white rounded-lg transition-all border border-transparent hover:border-red-500 shrink-0 cursor-pointer"
+                        title="Close Document & Return to Blank Board"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Floating Tutor PiP in Whiteboard Corner with Minimize/Hide Toggle */}
+                  {isCameraEnabled && showPipVideo && (
+                    <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 w-20 xs:w-24 sm:w-44 md:w-52 aspect-video rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl border sm:border-2 border-blue-500 bg-slate-900 z-10">
+                      <CameraStreamVideo
+                        trackRef={localTrackRef}
+                        participant={localParticipant}
+                        isLocal={true}
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute bottom-0.5 left-1 bg-black/70 px-1 py-0.2 rounded text-[8px] sm:text-[10px] font-semibold text-white">
                         {roleTitle} (Live)
                       </div>
+                      <button
+                        onClick={() => setShowPipVideo(false)}
+                        className="absolute top-1 right-1 p-0.5 bg-black/70 hover:bg-black/90 text-slate-300 hover:text-white rounded cursor-pointer"
+                        title="Hide Video to view full document"
+                      >
+                        <EyeOff className="w-3 h-3" />
+                      </button>
                     </div>
+                  )}
+
+                  {isCameraEnabled && !showPipVideo && (
+                    <button
+                      onClick={() => setShowPipVideo(true)}
+                      className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 px-2 py-1 rounded-lg bg-black/80 hover:bg-black border border-slate-700 text-slate-300 hover:text-white text-[10px] sm:text-xs font-semibold flex items-center gap-1 shadow-lg cursor-pointer z-10"
+                      title="Show Tutor Video"
+                    >
+                      <Eye className="w-3 h-3 text-blue-400" />
+                      <span>Show Video</span>
+                    </button>
                   )}
                 </div>
               </div>
@@ -2227,9 +3010,11 @@ const LiveStudioStage = ({
                     : "border border-slate-800"
                 }`}
               >
-                {localParticipant.isCameraEnabled ? (
-                  <VideoTrack
-                    trackRef={tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)}
+                {isCameraEnabled ? (
+                  <CameraStreamVideo
+                    trackRef={localTrackRef}
+                    participant={localParticipant}
+                    isLocal={true}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -2277,6 +3062,8 @@ const LiveStudioStage = ({
               {/* Remote Participants (Students) */}
               {remoteParticipants.map((p) => {
                 const pTrack = tracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
+                const pCamPub = p.getTrackPublication(Track.Source.Camera);
+                const isCamOn = !!(p.isCameraEnabled || pTrack?.publication?.track || pCamPub?.track);
                 const hasHandRaised = !!raisedHands[p.identity];
                 return (
                   <div
@@ -2305,8 +3092,8 @@ const LiveStudioStage = ({
                       </div>
                     )}
 
-                    {pTrack ? (
-                      <VideoTrack trackRef={pTrack} className="w-full h-full object-cover" />
+                    {isCamOn ? (
+                      <CameraStreamVideo trackRef={pTrack} participant={p} isLocal={false} className="w-full h-full object-cover" />
                     ) : (
                       <div className="text-center p-4">
                         <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full text-lg sm:text-xl font-bold flex items-center justify-center mx-auto mb-2 border ${
@@ -2427,6 +3214,20 @@ const LiveStudioStage = ({
             <PenTool className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">{activeTab === "whiteboard" ? "Back to Video Stage" : "Open Whiteboard"}</span>
             <span className="sm:hidden">{activeTab === "whiteboard" ? "Stage" : "Board"}</span>
+          </button>
+
+          {/* Quick Present Document Button */}
+          <button
+            onClick={() => {
+              setActiveTab("whiteboard");
+              setTimeout(() => docInputRef.current?.click(), 100);
+            }}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl text-xs font-semibold bg-blue-600/90 hover:bg-blue-600 text-white border border-blue-500/50 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+            title="Present Image, PDF, or Document"
+          >
+            <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Present Doc</span>
+            <span className="sm:hidden">Doc</span>
           </button>
         </div>
 
@@ -2614,8 +3415,8 @@ const LiveStudioStage = ({
         </div>
       )}
 
-      {/* Floating Quick Admission Notification for Tutor */}
-      {!isAcademic && pendingRequests.length > 0 && !showAdmissionsModal && (
+      {/* Floating Quick Admission Notification for Tutor / Host */}
+      {pendingRequests.length > 0 && !showAdmissionsModal && (
         <div className="fixed bottom-18 sm:bottom-24 left-2.5 right-2.5 sm:left-auto sm:right-6 sm:max-w-sm z-40 bg-slate-900/98 border border-amber-500/50 rounded-2xl p-3.5 sm:p-4 shadow-2xl animate-in slide-in-from-bottom-5 duration-300 backdrop-blur-xl">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
@@ -2806,6 +3607,10 @@ const TutorLiveStudioPage = () => {
   const returnDestination = userRole === "teacher" ? "/teacher" : "/academic/live-classes";
 
   const roomOptions = React.useMemo(() => ({
+    videoCaptureDefaults: {
+      resolution: { width: 1280, height: 720, frameRate: 30 },
+      facingMode: "user"
+    },
     audioCaptureDefaults: {
       autoGainControl: true,
       echoCancellation: true,
@@ -2814,6 +3619,8 @@ const TutorLiveStudioPage = () => {
       channelCount: 1
     },
     publishDefaults: {
+      videoSimulcastLayers: [],
+      videoCodec: "vp8",
       audioPreset: {
         maxBitrate: 64000
       },
@@ -2822,8 +3629,26 @@ const TutorLiveStudioPage = () => {
     }
   }), []);
 
+  const isInitializingRef = useRef(false);
+
   useEffect(() => {
-    initLiveSession();
+    let cancelled = false;
+    const run = async () => {
+      if (isInitializingRef.current) return;
+      isInitializingRef.current = true;
+      try {
+        await initLiveSession();
+      } finally {
+        if (!cancelled) {
+          isInitializingRef.current = false;
+        }
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+      isInitializingRef.current = false;
+    };
   }, [id]);
 
   const initLiveSession = async () => {
@@ -2838,15 +3663,7 @@ const TutorLiveStudioPage = () => {
       // 2. Start or Join session (Academic Manager inspects, Tutor starts or continues)
       let sessionRes;
       if (userRole === "academic" || userRole === "admin") {
-        if (lc?.status !== "LIVE") {
-          setError("This live class has not been started yet. Please wait for the assigned tutor to start the class.");
-          setLoading(false);
-          return;
-        }
-        sessionRes = await joinLiveClass(id);
-      } else {
         if (lc?.status === "LIVE") {
-          // Class is already LIVE! Tutor is continuing active session across refresh
           try {
             sessionRes = await joinLiveClass(id);
           } catch (e) {
@@ -2859,6 +3676,28 @@ const TutorLiveStudioPage = () => {
             sessionRes = await joinLiveClass(id);
           }
         }
+      } else {
+        // Tutor hosting: ALWAYS startLiveClass so actual_start resets to now & new part starts cleanly from 0
+        try {
+          sessionRes = await startLiveClass(id);
+        } catch (e) {
+          sessionRes = await joinLiveClass(id);
+        }
+      }
+
+      // Update state liveClass with fresh start time from backend
+      const freshStartIso = sessionRes.actual_start || sessionRes.actualStart || new Date().toISOString();
+      const freshStartMs = new Date(freshStartIso).getTime();
+
+      setLiveClass(prev => ({
+        ...(sessionRes.liveClass || prev || lc),
+        status: "LIVE",
+        actual_start: freshStartIso
+      }));
+
+      // Every time tutor joins/rejoins, reset session timer strictly from 0:00
+      if (id) {
+        sessionStorage.setItem(`isml_class_start_${id}`, freshStartMs.toString());
       }
 
       setToken(sessionRes.token);
@@ -2892,6 +3731,7 @@ const TutorLiveStudioPage = () => {
       }
 
       // 3. Client video upload (saves recorded WebM directly to Supabase storage)
+      let uploadResult = null;
       if (recordedBlob && recordedBlob.size > 2000) {
         setEndStatus({
           status: "saving",
@@ -2904,9 +3744,9 @@ const TutorLiveStudioPage = () => {
             formData.append("video", recordedBlob, `class_${id}_${Date.now()}.webm`);
             formData.append("duration_seconds", elapsedSecs || 60);
             if (topics) formData.append("topics_covered", topics);
-            await uploadRecordingVideo(id, formData);
+            return await uploadRecordingVideo(id, formData);
           };
-          await Promise.race([
+          uploadResult = await Promise.race([
             uploadPromise(),
             new Promise((resolve) => setTimeout(resolve, 30000))
           ]);
@@ -2915,12 +3755,14 @@ const TutorLiveStudioPage = () => {
         }
       }
 
+      const partNum = uploadResult?.part_number || uploadResult?.part;
+      const partSuffix = partNum ? ` - Part ${partNum} Saved` : "";
       setEndStatus({
         status: "success",
-        title: "Live Class Ended Successfully",
+        title: `Live Class Ended${partSuffix}`,
         message: userRole === "teacher"
-          ? "Class completed and recordings finalized. Redirecting to your dashboard..."
-          : "Class completed and recordings finalized. Redirecting to classes schedule..."
+          ? (partNum ? `Class Part ${partNum} completed and saved to archive. Redirecting to dashboard...` : "Class completed and recordings finalized. Redirecting to your dashboard...")
+          : (partNum ? `Class Part ${partNum} completed and saved to archive. Redirecting to classes schedule...` : "Class completed and recordings finalized. Redirecting to classes schedule...")
       });
 
       setTimeout(() => {
