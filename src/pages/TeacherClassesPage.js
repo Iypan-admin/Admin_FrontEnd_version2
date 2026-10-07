@@ -774,6 +774,23 @@ function TeacherClassesPage() {
                             </svg>
                             LSRW
                           </button>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/teacher/batch/${batch.batch_id}/attendance`);
+                            }}
+                            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center justify-center border border-emerald-300 hover:border-emerald-500 shadow-sm"
+                            style={{ backgroundColor: '#ecfdf5', color: '#047857' }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = '#d1fae5'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = '#ecfdf5'}
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                            </svg>
+                            Attendance
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

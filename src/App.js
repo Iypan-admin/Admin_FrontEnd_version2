@@ -90,6 +90,7 @@ import CardAdminEventCalendarPage from "./pages/CardAdminEventCalendarPage";
 import AcademicLiveClassesPage from "./pages/AcademicLiveClassesPage";
 import TutorLiveStudioPage from "./pages/TutorLiveStudioPage";
 import AcademicRecordingsMasterPage from "./pages/AcademicRecordingsMasterPage";
+import AcademicAttendancePage from "./pages/AcademicAttendancePage";
 
 
 
@@ -717,6 +718,14 @@ function App() {
               }
             />
             <Route
+              path="/academic/attendance"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "academic"]}>
+                  <AcademicAttendancePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/live-studio/:id"
               element={
                 <ProtectedRoute allowedRoles={["admin", "academic", "teacher"]}>
@@ -1053,6 +1062,14 @@ function App() {
               }
             />
 
+            <Route
+              path="/teacher/attendance"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherAttendancePage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/teacher/batch/:batchId/attendance"
               element={

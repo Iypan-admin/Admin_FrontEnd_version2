@@ -239,3 +239,31 @@ export const rejectStudent = async (id, student_id) => {
   return response.json();
 };
 
+const ATTENDANCE_URL = resolveApiUrl(process.env.REACT_APP_ATTENDANCE_API_URL, 'attendance');
+
+export const getLiveClassAttendance = async (liveClassId) => {
+  const response = await fetch(`${ATTENDANCE_URL}/live-class/${liveClassId}`, {
+    method: 'GET',
+    headers: getHeaders()
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch live attendance');
+  }
+  return response.json();
+};
+
+export const markLiveClassAttendance = async (liveClassId, payload) => {
+  const response = await fetch(`${ATTENDANCE_URL}/live-class/${liveClassId}/mark`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to save live attendance');
+  }
+  return response.json();
+};
+
+

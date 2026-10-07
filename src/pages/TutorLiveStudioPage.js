@@ -7,6 +7,10 @@ import {
   VideoOff,
   PhoneOff,
   Users,
+  MessageSquare,
+  Send,
+  Reply,
+  CornerDownRight,
   PenTool,
   Radio,
   Disc,
@@ -65,7 +69,9 @@ import {
   admitStudent,
   admitAllStudents,
   rejectStudent,
-  resetLiveClassTimer
+  resetLiveClassTimer,
+  getLiveClassAttendance,
+  markLiveClassAttendance
 } from "../services/liveClassApi";
 
 // Curated Palette for Professional Digital Classroom Board
@@ -173,6 +179,50 @@ const LiveStudioStage = ({
     return (liveClass?.id && sessionStorage.getItem(`isml_active_tab_${liveClass.id}`)) || "stage";
   });
   const [showAttendees, setShowAttendees] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const showChatRef = useRef(showChat);
+  showChatRef.current = showChat;
+
+  const [chatMessages, setChatMessages] = useState(() => {
+    try {
+      const saved = liveClass?.id && sessionStorage.getItem(`isml_chat_${liveClass.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+  const [chatInputText, setChatInputText] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const chatEndRef = useRef(null);
+
+  // Play subtle incoming chat notification chime
+  const playChatChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    } catch (_) {}
+  };
+
+  // Auto-scroll chat feed to bottom on new messages
+  useEffect(() => {
+    if (showChat) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages, showChat]);
+
   const [sessionEndedNotice, setSessionEndedNotice] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => {
     const saved = liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`);
@@ -189,6 +239,144 @@ const LiveStudioStage = ({
   const [showEndModal, setShowEndModal] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [topicsCovered, setTopicsCovered] = useState("");
+
+  // Live In-Classroom Attendance State
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [attendanceData, setAttendanceData] = useState(null);
+  const [isAttendanceMarkedToday, setIsAttendanceMarkedToday] = useState(false);
+
+  // Load attendance data from backend
+  const loadLiveAttendance = async () => {
+    if (!liveClass?.id) return;
+    try {
+      setAttendanceLoading(true);
+      const res = await getLiveClassAttendance(liveClass.id);
+      if (res?.success && res.data) {
+        const d = res.data;
+        // Determine online participants currently in LiveKit room
+        const onlineIdentities = new Set((remoteParticipants || []).map((p) => (p.identity || "").toLowerCase()));
+        const onlineNames = new Set((remoteParticipants || []).map((p) => (p.name || "").toLowerCase()));
+
+        // Map students with online status and smart default
+        const updatedStudents = (d.students || []).map((s) => {
+          const sName = (s.name || "").toLowerCase();
+          const sId = (s.student_id || "").toLowerCase();
+          const isOnline =
+            onlineIdentities.has(sId) ||
+            onlineNames.has(sName) ||
+            (remoteParticipants || []).some((p) => {
+              const pName = (p.name || "").toLowerCase();
+              const pId = (p.identity || "").toLowerCase();
+              return (
+                (pName && sName && (pName.includes(sName) || sName.includes(pName))) ||
+                (pId && sId && pId.includes(sId))
+              );
+            });
+
+          let status = s.status;
+          if (!d.is_marked || status === "not_marked") {
+            status = isOnline ? "present" : "absent";
+          }
+
+          return {
+            ...s,
+            is_online: isOnline,
+            status
+          };
+        });
+
+        setAttendanceData({
+          ...d,
+          students: updatedStudents
+        });
+        setIsAttendanceMarkedToday(d.is_marked);
+      }
+    } catch (err) {
+      console.warn("Failed to load live attendance:", err);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
+  // Pre-load attendance status on room connect
+  useEffect(() => {
+    if (liveClass?.id && room?.state === "connected") {
+      loadLiveAttendance();
+    }
+  }, [liveClass?.id, room?.state]);
+
+  // Quick Action: Mark all students currently connected in LiveKit as Present, rest as Absent
+  const handleMarkOnlinePresent = () => {
+    if (!attendanceData?.students) return;
+    const nextStudents = attendanceData.students.map((s) => ({
+      ...s,
+      status: s.is_online ? "present" : "absent"
+    }));
+    setAttendanceData((prev) => ({ ...prev, students: nextStudents }));
+  };
+
+  // Quick Action: Mark All Present
+  const handleMarkAllPresent = () => {
+    if (!attendanceData?.students) return;
+    const nextStudents = attendanceData.students.map((s) => ({ ...s, status: "present" }));
+    setAttendanceData((prev) => ({ ...prev, students: nextStudents }));
+  };
+
+  // Quick Action: Mark All Absent
+  const handleMarkAllAbsent = () => {
+    if (!attendanceData?.students) return;
+    const nextStudents = attendanceData.students.map((s) => ({ ...s, status: "absent" }));
+    setAttendanceData((prev) => ({ ...prev, students: nextStudents }));
+  };
+
+  // Toggle single student status
+  const handleToggleStudentStatus = (studentId, newStatus) => {
+    if (!attendanceData?.students) return;
+    const nextStudents = attendanceData.students.map((s) =>
+      s.student_id === studentId ? { ...s, status: newStatus } : s
+    );
+    setAttendanceData((prev) => ({ ...prev, students: nextStudents }));
+  };
+
+  // Save Attendance to Backend
+  const handleSaveLiveAttendance = async () => {
+    if (!liveClass?.id || !attendanceData?.students) return;
+    try {
+      setAttendanceSaving(true);
+      const payload = {
+        session_date: attendanceData.session_date,
+        records: attendanceData.students.map((s) => ({
+          student_id: s.student_id,
+          status: s.status || "present"
+        }))
+      };
+
+      const res = await markLiveClassAttendance(liveClass.id, payload);
+      if (res?.success) {
+        setIsAttendanceMarkedToday(true);
+        setShowAttendanceModal(false);
+        // Broadcast attendance marked event to students via LiveKit
+        try {
+          if (room?.localParticipant) {
+            const dataMsg = new TextEncoder().encode(
+              JSON.stringify({
+                type: "ATTENDANCE_MARKED",
+                batchId: liveClass.batch_id,
+                date: attendanceData.session_date
+              })
+            );
+            room.localParticipant.publishData(dataMsg, { reliable: true });
+          }
+        } catch (_) {}
+      }
+    } catch (err) {
+      alert("Failed to save attendance: " + err.message);
+    } finally {
+      setAttendanceSaving(false);
+    }
+  };
 
   // Hand Raise State & Audio Chime
   const [raisedHands, setRaisedHands] = useState(() => {
@@ -2285,6 +2473,34 @@ const LiveStudioStage = ({
           return;
         }
 
+        if (data.type === "CHAT_MESSAGE" || data.type === "CHAT") {
+          const incomingMsg = {
+            id: data.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            senderId: data.senderId || participant?.identity || "peer",
+            senderName: data.senderName || data.sender || participant?.name || "Participant",
+            role: data.role || (participant ? getParticipantRole(participant) : "student"),
+            roleLabel: data.roleLabel || (data.role === "teacher" ? "Instructor (Host)" : (data.role === "academic" ? "Academic Manager" : (data.role === "admin" ? "Administrator" : "Student"))),
+            text: data.text || data.message || "",
+            time: data.time || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            replyTo: data.replyTo || null
+          };
+
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+            const next = [...prev, incomingMsg];
+            if (liveClass?.id) {
+              sessionStorage.setItem(`isml_chat_${liveClass.id}`, JSON.stringify(next));
+            }
+            return next;
+          });
+
+          if (!showChatRef.current) {
+            setUnreadChatCount((prev) => prev + 1);
+            playChatChime();
+          }
+          return;
+        }
+
         if (data.type === "HAND_RAISE") {
           const studentId = data.studentId || participant?.identity || "student";
           const studentName = data.studentName || participant?.name || "Student";
@@ -2356,6 +2572,55 @@ const LiveStudioStage = ({
     const statusInterval = setInterval(pollClassStatus, 4000);
     return () => clearInterval(statusInterval);
   }, [isAcademic, liveClass?.id, navigate, returnDestination]);
+
+  // Handle sending a chat message to everyone in the classroom
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault();
+    const text = chatInputText.trim();
+    if (!text || !room || room.state !== "connected") return;
+
+    const myName = (localParticipant.name && localParticipant.name !== "Tutor")
+      ? localParticipant.name
+      : (userDisplayName || (isTeacher ? "Instructor" : (isAcademic ? "Academic Manager" : "Moderator")));
+
+    const myRole = isTeacher ? "teacher" : (isAcademic ? "academic" : (userRole === "admin" ? "admin" : "teacher"));
+    const myRoleLabel = isTeacher ? "Instructor (Host)" : (isAcademic ? "Academic Manager" : "Administrator");
+
+    const newMsg = {
+      type: "CHAT_MESSAGE",
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      senderId: localParticipant.identity,
+      senderName: myName,
+      role: myRole,
+      roleLabel: myRoleLabel,
+      text,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      replyTo: replyingTo ? {
+        id: replyingTo.id,
+        senderName: replyingTo.senderName,
+        roleLabel: replyingTo.roleLabel,
+        text: replyingTo.text
+      } : null
+    };
+
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify(newMsg));
+      await room.localParticipant.publishData(payload, { reliable: true });
+    } catch (err) {
+      console.warn("Failed to broadcast chat:", err);
+    }
+
+    setChatMessages((prev) => {
+      const next = [...prev, newMsg];
+      if (liveClass?.id) {
+        sessionStorage.setItem(`isml_chat_${liveClass.id}`, JSON.stringify(next));
+      }
+      return next;
+    });
+
+    setChatInputText("");
+    setReplyingTo(null);
+  };
 
   // Safe End Class Trigger (Gathers Compositor Video and Hands Over)
   const handleConfirmEnd = async () => {
@@ -3197,6 +3462,163 @@ const LiveStudioStage = ({
             </div>
           </aside>
         )}
+
+        {/* Live Classroom Chat Drawer */}
+        {showChat && (
+          <aside className="w-72 sm:w-84 md:w-96 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-20 h-full">
+            {/* Chat Header */}
+            <div className="p-3.5 sm:p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 shrink-0">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-xs sm:text-sm text-white truncate">Classroom Chat</h3>
+                  <p className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                    <span>Live Q&A • {chatMessages.length} message{chatMessages.length !== 1 ? 's' : ''}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowChat(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Close Chat"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Chat Messages Feed */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-3">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-semibold text-slate-300">No messages yet</p>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">
+                    Type a message below to chat, answer questions, or discuss with students!
+                  </p>
+                </div>
+              ) : (
+                chatMessages.map((msg) => {
+                  const isMe = msg.senderId === localParticipant.identity;
+                  const isMsgTeacher = msg.role === "teacher";
+                  const isMsgAcademic = msg.role === "academic" || msg.role === "admin";
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col group ${isMe ? "items-end" : "items-start"}`}
+                    >
+                      {/* Meta: Sender Name, Role Badge, Time */}
+                      <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px]">
+                        <span className={`font-semibold ${isMe ? "text-purple-300" : (isMsgTeacher ? "text-emerald-300" : (isMsgAcademic ? "text-amber-300" : "text-slate-300"))}`}>
+                          {msg.senderName} {isMe && <span className="text-[10px] text-slate-400 font-normal">(You)</span>}
+                        </span>
+
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${
+                          isMsgTeacher
+                            ? "bg-purple-950/80 text-purple-300 border-purple-500/40"
+                            : isMsgAcademic
+                            ? "bg-amber-950/80 text-amber-300 border-amber-500/40"
+                            : "bg-slate-800 text-slate-400 border-slate-700"
+                        }`}>
+                          {msg.roleLabel || (isMsgTeacher ? "Instructor" : (isMsgAcademic ? "Academic" : "Student"))}
+                        </span>
+
+                        <span className="text-[10px] text-slate-400">{msg.time}</span>
+                      </div>
+
+                      {/* Message Bubble */}
+                      <div className="relative max-w-[88%] sm:max-w-[82%]">
+                        <div className={`p-2.5 sm:p-3 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm break-words ${
+                          isMe
+                            ? "bg-purple-600 text-white rounded-tr-sm"
+                            : isMsgTeacher
+                            ? "bg-slate-800 text-slate-100 border border-purple-500/40 rounded-tl-sm"
+                            : isMsgAcademic
+                            ? "bg-slate-800 text-slate-100 border border-amber-500/40 rounded-tl-sm"
+                            : "bg-slate-800 text-slate-200 border border-slate-700/70 rounded-tl-sm"
+                        }`}>
+                          {/* Quoted Reply Block */}
+                          {msg.replyTo && (
+                            <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-black/35 border-l-2 border-amber-400 text-[11px]">
+                              <p className="font-semibold text-amber-300 text-[10px]">
+                                ↩ Replying to {msg.replyTo.senderName} ({msg.replyTo.roleLabel})
+                              </p>
+                              <p className="line-clamp-2 text-slate-300 italic text-[11px] mt-0.5">
+                                "{msg.replyTo.text}"
+                              </p>
+                            </div>
+                          )}
+
+                          <p className="whitespace-pre-wrap">{msg.text}</p>
+                        </div>
+
+                        {/* Quick Reply Button on Hover */}
+                        <button
+                          onClick={() => setReplyingTo(msg)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-2.5 right-2 px-2 py-0.5 rounded-full bg-slate-750 hover:bg-purple-600 border border-slate-700 text-slate-300 hover:text-white shadow text-[10px] flex items-center gap-1 cursor-pointer"
+                          title="Reply to this message"
+                        >
+                          <Reply className="w-3 h-3" />
+                          <span className="text-[9px] font-semibold">Reply</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat Input Footer */}
+            <div className="p-3 border-t border-slate-800 bg-slate-900/95 shrink-0">
+              {/* Replying Banner */}
+              {replyingTo && (
+                <div className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl mb-2 flex items-center justify-between text-xs animate-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <CornerDownRight className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <span className="text-slate-400 text-[11px]">Replying to</span>
+                    <span className="font-semibold text-purple-300 text-[11px] truncate">{replyingTo.senderName}</span>
+                    <span className="text-slate-400 truncate max-w-[140px] italic text-[11px]">"{replyingTo.text}"</span>
+                  </div>
+                  <button
+                    onClick={() => setReplyingTo(null)}
+                    className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                    title="Cancel reply"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={chatInputText}
+                  onChange={(e) => setChatInputText(e.target.value)}
+                  placeholder={replyingTo ? `Reply to ${replyingTo.senderName}...` : "Type a message to class..."}
+                  className="flex-1 px-3 py-2 bg-slate-800/90 border border-slate-700 focus:border-purple-500 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInputText.trim()}
+                  className={`p-2 rounded-xl transition-all cursor-pointer ${
+                    chatInputText.trim()
+                      ? "bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-600/30"
+                      : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                  }`}
+                  title="Send Message"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* Floating Bottom Control Bar */}
@@ -3300,7 +3722,29 @@ const LiveStudioStage = ({
         </div>
 
         {/* Side Panel Toggles */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Chat Toggle Button with Unread Badge */}
+          <button
+            onClick={() => {
+              setShowChat((prev) => !prev);
+              setUnreadChatCount(0);
+            }}
+            className={`relative p-2 sm:p-3 rounded-lg sm:rounded-xl border transition-all cursor-pointer ${
+              showChat
+                ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-500/30"
+                : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
+            }`}
+            title="Classroom Chat"
+          >
+            <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {unreadChatCount > 0 && !showChat && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-4.5 h-4.5 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-bounce shadow">
+                {unreadChatCount > 9 ? "9+" : unreadChatCount}
+              </span>
+            )}
+          </button>
+
+          {/* Attendees Toggle Button */}
           <button
             onClick={() => setShowAttendees((prev) => !prev)}
             className={`relative p-2 sm:p-3 rounded-lg sm:rounded-xl border transition-all cursor-pointer ${
@@ -3313,6 +3757,28 @@ const LiveStudioStage = ({
               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-500 text-black text-[9px] font-bold rounded-full flex items-center justify-center animate-bounce shadow">
                 ✋
               </span>
+            )}
+          </button>
+
+          {/* Live Classroom Attendance Button with Status Indicator */}
+          <button
+            onClick={() => {
+              setShowAttendanceModal(true);
+              loadLiveAttendance();
+            }}
+            className={`relative p-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
+              isAttendanceMarkedToday
+                ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-md shadow-emerald-500/20"
+                : "bg-amber-950/70 text-amber-300 border-amber-500/60 hover:bg-amber-900/80 shadow-md shadow-amber-500/20"
+            }`}
+            title={isAttendanceMarkedToday ? "Attendance Recorded Today ✅" : "Attendance Not Marked Yet ⚠️"}
+          >
+            <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-current" />
+            <span className="hidden lg:inline text-xs font-semibold">
+              {isAttendanceMarkedToday ? "Attendance ✅" : "Attendance ⚠️"}
+            </span>
+            {!isAttendanceMarkedToday && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
             )}
           </button>
         </div>
@@ -3358,6 +3824,29 @@ const LiveStudioStage = ({
                 <span className="text-blue-400 font-medium">Auto-saving lecture recording</span>
               </div>
             </div>
+
+            {/* Attendance Pending Warning in End Class Modal */}
+            {!isAttendanceMarkedToday && (
+              <div className="bg-amber-950/60 border border-amber-500/40 rounded-2xl p-3 mb-4 flex items-center justify-between text-xs text-amber-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⚠️</span>
+                  <div>
+                    <p className="font-bold">Attendance Pending</p>
+                    <p className="text-[11px] text-amber-300/80">Class attendance has not been marked for today.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttendanceModal(true);
+                    loadLiveAttendance();
+                  }}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs cursor-pointer shrink-0 transition-colors"
+                >
+                  Mark Now
+                </button>
+              </div>
+            )}
 
             {/* Optional Topics Covered Input Field */}
             <div className="mb-4">
@@ -3410,6 +3899,214 @@ const LiveStudioStage = ({
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Classroom Attendance Modal */}
+      {showAttendanceModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-2xl w-full p-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Live Class Attendance
+                    {isAttendanceMarkedToday ? (
+                      <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                        Marked Today ✅
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-amber-500/20 border border-amber-500/40 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                        Pending Today ⚠️
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Batch: <span className="text-slate-200 font-semibold">{liveClass?.batch_name || "Current Batch"}</span> &bull; {new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAttendanceModal(false)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="py-3 px-1 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMarkOnlinePresent}
+                  className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Automatically mark all students currently in the meeting room as Present"
+                >
+                  <span>⚡</span>
+                  Mark Connected Present
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMarkAllPresent}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                >
+                  All Present
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMarkAllAbsent}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                >
+                  All Absent
+                </button>
+              </div>
+
+              {/* Attendance Counts Pill */}
+              {attendanceData?.students && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-bold">
+                    P: {attendanceData.students.filter(s => s.status === 'present').length}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-400 font-bold">
+                    A: {attendanceData.students.filter(s => s.status === 'absent').length}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 font-bold">
+                    L: {attendanceData.students.filter(s => s.status === 'late').length}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Students List */}
+            <div className="flex-1 overflow-y-auto py-3 space-y-2 pr-1 custom-scrollbar">
+              {attendanceLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <Loader2 className="w-8 h-8 animate-spin mb-2 text-indigo-400" />
+                  <p className="text-xs">Loading batch students & live room presence...</p>
+                </div>
+              ) : !attendanceData?.students || attendanceData.students.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <Users className="w-10 h-10 mx-auto mb-2 text-slate-600" />
+                  <p className="text-sm font-semibold text-slate-300">No students enrolled in this batch</p>
+                  <p className="text-xs text-slate-500 mt-1">Students enrolled in this batch will appear here.</p>
+                </div>
+              ) : (
+                attendanceData.students.map((student) => {
+                  const isPresent = student.status === 'present';
+                  const isAbsent = student.status === 'absent';
+                  const isLate = student.status === 'late';
+
+                  return (
+                    <div
+                      key={student.student_id}
+                      className="flex items-center justify-between p-3 rounded-2xl bg-slate-800/50 hover:bg-slate-800/80 border border-slate-700/50 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs shrink-0">
+                          {student.name ? student.name.charAt(0).toUpperCase() : "S"}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-white truncate">{student.name || "Student"}</p>
+                            {student.is_online_now ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Connected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-md bg-slate-700/60 text-slate-400 shrink-0">
+                                Offline
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {student.registration_number ? `Reg: ${student.registration_number}` : (student.email || "")}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Status Toggle Buttons */}
+                      <div className="flex items-center gap-1 shrink-0 ml-3">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStudentStatus(student.student_id, 'present')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            isPresent
+                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                              : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          Present
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStudentStatus(student.student_id, 'absent')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            isAbsent
+                              ? "bg-red-600 text-white shadow-md shadow-red-600/30"
+                              : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          Absent
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStudentStatus(student.student_id, 'late')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            isLate
+                              ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                              : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          Late
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-slate-400">
+                💾 Saves directly to Academic &amp; Student portals.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAttendanceModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLiveAttendance}
+                  disabled={attendanceSaving || !attendanceData?.students?.length}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {attendanceSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Save Attendance</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -4426,6 +4426,31 @@ export const bulkUpdateAttendanceRecords = async (records, token) => {
   }
 };
 
+// Academic Manager Attendance Overview
+export const getAcademicAttendanceOverview = async (token, date = null) => {
+  try {
+    const authToken = token || localStorage.getItem('token');
+    const url = date 
+      ? `${ATTENDANCE_API_URL}/attendance/academic/overview?date=${encodeURIComponent(date)}`
+      : `${ATTENDANCE_API_URL}/attendance/academic/overview`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to fetch academic attendance overview");
+    }
+
+    return data;
+  } catch (error) {
+    throw new Error(`Academic Attendance Overview Error: ${error.message}`);
+  }
+};
+
 
 // ----------------------
 // Event Management Functions

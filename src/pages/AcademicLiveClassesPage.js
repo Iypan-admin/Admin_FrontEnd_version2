@@ -754,6 +754,14 @@ const AcademicLiveClassesPage = () => {
     return counts;
   }, [classes]);
 
+  // Only batches that actually have live classes scheduled
+  const batchesWithClasses = useMemo(() => {
+    return batches.filter((b) => {
+      const bId = b.batch_id || b.id;
+      return (batchClassCounts[bId] || 0) > 0;
+    });
+  }, [batches, batchClassCounts]);
+
   // Index classes by YYYY-MM-DD
   const classesByDate = useMemo(() => {
     const map = {};
@@ -1003,8 +1011,8 @@ const AcademicLiveClassesPage = () => {
                 onChange={(e) => setBatchFilter(e.target.value)}
                 className="bg-transparent text-slate-700 font-semibold focus:outline-none cursor-pointer w-full sm:w-auto sm:max-w-[220px] truncate text-xs"
               >
-                <option value="">All Batches ({batches.length})</option>
-                {batches.map((b) => {
+                <option value="">All Batches ({batchesWithClasses.length})</option>
+                {batchesWithClasses.map((b) => {
                   const bId = b.batch_id || b.id;
                   const count = batchClassCounts[bId] || 0;
                   return (
