@@ -225,14 +225,14 @@ const LiveStudioStage = ({
 
   const [sessionEndedNotice, setSessionEndedNotice] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => {
-    const saved = liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`);
+    const saved = liveClass?.id && (sessionStorage.getItem(`isml_class_start_${liveClass.id}`) || localStorage.getItem(`isml_class_start_${liveClass.id}`));
     if (saved) {
       const diff = Math.floor((Date.now() - parseInt(saved, 10)) / 1000);
-      if (diff >= 0 && diff < 3600) return diff;
+      if (diff >= 0 && diff < 43200) return diff; // Up to 12 hours
     }
     if (liveClass?.actual_start) {
       const diff = Math.floor((Date.now() - new Date(liveClass.actual_start).getTime()) / 1000);
-      if (diff >= 0 && diff < 3600) return diff;
+      if (diff >= 0 && diff < 43200) return diff;
     }
     return 0;
   });
@@ -628,13 +628,23 @@ const LiveStudioStage = ({
   const [drawColor, setDrawColor] = useState("#2563eb");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [boardTheme, setBoardTheme] = useState("light"); // "light" (Paper Grid) | "dark" (Blackboard)
+  const [remoteWhiteboardUrl, setRemoteWhiteboardUrl] = useState(null);
+  const lastWhiteboardSyncPayloadRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const startPosRef = useRef({ x: 0, y: 0 });
   const snapshotRef = useRef(null);
 
   // Document, Image & PDF Presentation State
-  const [presentedDoc, setPresentedDoc] = useState(null); // { name, type: 'image'|'pdf'|'text', page, totalPages, fitMode, zoom }
-  const presentedDocRef = useRef(null);
+  const [presentedDoc, setPresentedDoc] = useState(() => {
+    if (liveClass?.id) {
+      try {
+        const saved = localStorage.getItem(`isml_wb_doc_${liveClass.id}`);
+        if (saved) return JSON.parse(saved);
+      } catch (_) {}
+    }
+    return null;
+  }); // { name, type: 'image'|'pdf'|'text', page, totalPages, fitMode, zoom }
+  const presentedDocRef = useRef(presentedDoc);
   presentedDocRef.current = presentedDoc;
   const [isDocLoading, setIsDocLoading] = useState(false);
   const [docFitMode, setDocFitMode] = useState("page"); // 'page' | 'width'
@@ -686,14 +696,14 @@ const LiveStudioStage = ({
     setElapsedSeconds(0);
   };
 
-  // Resilient Timer - Continues seamlessly across refreshes, resets if stale (>60 mins)
+  // Resilient Timer - Continues seamlessly across refreshes, resets if stale (>12 hours)
   useEffect(() => {
     let startMs = null;
-    const saved = liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`);
+    const saved = liveClass?.id && (sessionStorage.getItem(`isml_class_start_${liveClass.id}`) || localStorage.getItem(`isml_class_start_${liveClass.id}`));
     if (saved) {
       const parsed = parseInt(saved, 10);
       const diffSecs = Math.floor((Date.now() - parsed) / 1000);
-      if (diffSecs >= 0 && diffSecs < 3600) {
+      if (diffSecs >= 0 && diffSecs < 43200) {
         startMs = parsed;
       }
     }
@@ -701,7 +711,7 @@ const LiveStudioStage = ({
     if (!startMs && liveClass?.actual_start) {
       const parsed = new Date(liveClass.actual_start).getTime();
       const diffSecs = Math.floor((Date.now() - parsed) / 1000);
-      if (diffSecs >= 0 && diffSecs < 3600) {
+      if (diffSecs >= 0 && diffSecs < 43200) {
         startMs = parsed;
       }
     }
@@ -710,13 +720,15 @@ const LiveStudioStage = ({
       startMs = Date.now();
       if (liveClass?.id) {
         sessionStorage.setItem(`isml_class_start_${liveClass.id}`, startMs.toString());
+        localStorage.setItem(`isml_class_start_${liveClass.id}`, startMs.toString());
       }
     }
 
     const calcElapsed = () => {
-      const currentStart = (liveClass?.id && sessionStorage.getItem(`isml_class_start_${liveClass.id}`))
-        ? parseInt(sessionStorage.getItem(`isml_class_start_${liveClass.id}`), 10)
-        : startMs;
+      const savedStart = liveClass?.id
+        ? (sessionStorage.getItem(`isml_class_start_${liveClass.id}`) || localStorage.getItem(`isml_class_start_${liveClass.id}`))
+        : null;
+      const currentStart = savedStart ? parseInt(savedStart, 10) : startMs;
       const secs = Math.max(0, Math.floor((Date.now() - currentStart) / 1000));
       setElapsedSeconds(secs);
     };
@@ -830,6 +842,16 @@ const LiveStudioStage = ({
       if (audioContextRef.current && audioContextRef.current.state === "suspended") {
         audioContextRef.current.resume().catch(() => {});
       }
+
+      // Resume on any user click/tap/keydown anywhere on window
+      const resumeAudio = () => {
+        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+          audioContextRef.current.resume().catch(() => {});
+        }
+      };
+      window.addEventListener("click", resumeAudio, { once: true });
+      window.addEventListener("touchstart", resumeAudio, { once: true });
+      window.addEventListener("keydown", resumeAudio, { once: true });
     } catch (e) {
       console.warn("Audio engine setup note:", e.message);
     }
@@ -853,6 +875,9 @@ const LiveStudioStage = ({
   // 1a. Link LiveKit local microphone track directly to master gain (Zero hardware contention!)
   useEffect(() => {
     if (!localParticipant || !audioContextRef.current || !masterGainRef.current) return;
+
+    // Mute microphone by default upon entry so tutor and manager start silent and can unmute on demand
+    // (Local participant stays muted until user clicks the mic button)
 
     const syncLocalMic = () => {
       try {
@@ -883,15 +908,25 @@ const LiveStudioStage = ({
     localParticipant.on(ParticipantEvent.TrackPublished, syncLocalMic);
     localParticipant.on(ParticipantEvent.TrackUnpublished, syncLocalMic);
 
+    const micInterval = setInterval(syncLocalMic, 1500);
+
     return () => {
+      clearInterval(micInterval);
       localParticipant.off(ParticipantEvent.TrackPublished, syncLocalMic);
       localParticipant.off(ParticipantEvent.TrackUnpublished, syncLocalMic);
     };
-  }, [localParticipant]);
+  }, [localParticipant, isTeacher, isMicrophoneEnabled]);
 
-  // 1b. Real-time Remote Audio Pipeline (Student & Attendee Mics -> Recording Bus)
+  // 1b. Real-time Remote Audio Pipeline (Student & Attendee Mics -> Recording Bus + Browser Audio Auto-Start)
   useEffect(() => {
     if (!room) return;
+
+    // Ensure audio playback can start without autoplay restrictions
+    try {
+      if (typeof room.startAudio === "function") {
+        room.startAudio().catch(() => {});
+      }
+    } catch (_) {}
 
     const syncExistingTracks = () => {
       try {
@@ -1385,6 +1420,9 @@ const LiveStudioStage = ({
       };
       setPresentedDoc(docData);
       presentedDocRef.current = docData;
+      if (liveClass?.id) {
+        try { localStorage.setItem(`isml_wb_doc_${liveClass.id}`, JSON.stringify(docData)); } catch (_) {}
+      }
 
       broadcastWhiteboardState({ docInfo: docData });
     } catch (err) {
@@ -1438,6 +1476,9 @@ const LiveStudioStage = ({
     };
     setPresentedDoc(docData);
     presentedDocRef.current = docData;
+    if (liveClass?.id) {
+      try { localStorage.setItem(`isml_wb_doc_${liveClass.id}`, JSON.stringify(docData)); } catch (_) {}
+    }
 
     broadcastWhiteboardState({ docInfo: docData });
   };
@@ -1685,6 +1726,10 @@ const LiveStudioStage = ({
       redoRef.current = [];
     }
 
+    if (liveClass?.id) {
+      try { localStorage.removeItem(`isml_wb_doc_${liveClass.id}`); } catch (_) {}
+    }
+
     broadcastWhiteboardState({ docInfo: null });
   };
 
@@ -1724,6 +1769,7 @@ const LiveStudioStage = ({
         docInfo: presentedDocRef.current,
         ...override
       });
+      lastWhiteboardSyncPayloadRef.current = payload;
       room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
     } catch (err) {
       console.warn("Whiteboard broadcast error:", err);
@@ -1797,20 +1843,42 @@ const LiveStudioStage = ({
     broadcastWhiteboardState({ activeTab, boardTheme });
   }, [activeTab, boardTheme]);
 
-  // Handle incoming room data (Sync requests, Hand Raises)
+  // Handle incoming room data (Sync requests from new students or Academic Managers)
   useEffect(() => {
     if (!room) return;
     const handleData = (payload) => {
       try {
         const decoded = JSON.parse(new TextDecoder().decode(payload));
         if (decoded.type === "REQUEST_SYNC") {
+          // Send cached state immediately without waiting for canvas redraw
+          if (lastWhiteboardSyncPayloadRef.current && room.localParticipant) {
+            room.localParticipant.publishData(new TextEncoder().encode(lastWhiteboardSyncPayloadRef.current), { reliable: true }).catch(() => {});
+          }
+          // Also fresh broadcast from canvas if available
           broadcastWhiteboardState();
         }
       } catch (e) {}
     };
+
+    // Auto broadcast to newly connected attendees (late joiners)
+    const handleParticipantConnected = (participant) => {
+      console.log("[LiveStudio] New attendee joined room:", participant?.identity);
+      setTimeout(() => {
+        if (lastWhiteboardSyncPayloadRef.current && room.localParticipant) {
+          room.localParticipant.publishData(new TextEncoder().encode(lastWhiteboardSyncPayloadRef.current), { reliable: true }).catch(() => {});
+        }
+        broadcastWhiteboardState();
+      }, 500);
+      setTimeout(() => {
+        broadcastWhiteboardState();
+      }, 1500);
+    };
+
     room.on("dataReceived", handleData);
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
     return () => {
       room.off("dataReceived", handleData);
+      room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
     };
   }, [room, activeTab, boardTheme]);
 
@@ -2276,12 +2344,25 @@ const LiveStudioStage = ({
       ];
 
       if (currentActiveTab === "whiteboard" && canvasRef.current) {
-        // Mode A: Whiteboard Presentation Active
+        // Mode A: Whiteboard Presentation Active (Crisp HD Preservation)
         cCtx.fillStyle = currentBoardTheme === "dark" ? "#090d16" : "#f8fafc";
         cCtx.fillRect(0, 0, 1280, 720);
 
-        // Composite Whiteboard Canvas
-        cCtx.drawImage(canvasRef.current, 0, 0, 1280, 720);
+        const wb = canvasRef.current;
+        if (wb.width > 0 && wb.height > 0) {
+          cCtx.imageSmoothingEnabled = true;
+          cCtx.imageSmoothingQuality = "high";
+
+          // Calculate exact aspect-ratio fit within 1280x720 canvas
+          const scale = Math.min(1280 / wb.width, 720 / wb.height);
+          const drawW = Math.round(wb.width * scale);
+          const drawH = Math.round(wb.height * scale);
+          const drawX = Math.round((1280 - drawW) / 2);
+          const drawY = Math.round((720 - drawH) / 2);
+
+          // Composite Whiteboard Canvas centered with exact proportions (No distortion or vertical squashing)
+          cCtx.drawImage(wb, drawX, drawY, drawW, drawH);
+        }
 
         // Corner PiP for Tutor
         const pw = 250;
@@ -2375,6 +2456,14 @@ const LiveStudioStage = ({
           console.log("Opus audio track successfully attached to MediaRecorder!");
         } else {
           console.warn("Audio destination had no audio track!");
+        }
+
+        // Direct fallback: If local tutor mic has mediaStreamTrack, attach it directly to combinedStream as backup
+        const micPub = localParticipant?.getTrackPublication(Track.Source.Microphone);
+        const directMicTrack = micPub?.track?.mediaStreamTrack;
+        if (directMicTrack && !combinedStream.getAudioTracks().includes(directMicTrack)) {
+          combinedStream.addTrack(directMicTrack);
+          console.log("Direct local tutor mic track attached to recording stream!");
         }
 
         let mimeType = "video/webm;codecs=vp8,opus";
@@ -2521,6 +2610,23 @@ const LiveStudioStage = ({
             return next;
           });
         }
+
+        // Whiteboard Live Synchronization for Observers (Academic Manager / Viewers)
+        if (data.type === "WHITEBOARD_SYNC") {
+          if (data.dataUrl) {
+            setRemoteWhiteboardUrl(data.dataUrl);
+          }
+          if (data.docInfo !== undefined) {
+            setPresentedDoc(data.docInfo);
+            presentedDocRef.current = data.docInfo;
+          }
+          if (data.boardTheme) {
+            setBoardTheme(data.boardTheme);
+          }
+          if (isAcademic && data.activeTab) {
+            setActiveTab(data.activeTab);
+          }
+        }
       } catch (err) {
         console.warn("Room data receive note:", err);
       }
@@ -2531,6 +2637,26 @@ const LiveStudioStage = ({
       room.off("dataReceived", handleDataReceived);
     };
   }, [room, isAcademic, navigate, returnDestination, liveClass?.id]);
+
+  // Auto-request whiteboard state sync on joining if observer (Immediate + staggered retries)
+  useEffect(() => {
+    if (!room || room.state !== "connected" || !isAcademic) return;
+    const sendObserverSync = () => {
+      try {
+        const payload = JSON.stringify({ type: "REQUEST_SYNC" });
+        room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+      } catch (_) {}
+    };
+
+    sendObserverSync();
+    const t1 = setTimeout(sendObserverSync, 1000);
+    const t2 = setTimeout(sendObserverSync, 2500);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [room, isAcademic]);
 
   // Auto-exit Academic Manager when room disconnects
   useEffect(() => {
@@ -2885,19 +3011,40 @@ const LiveStudioStage = ({
             } ${activeTab === "whiteboard" ? "flex" : "hidden"}`}
           >
               {/* Floating Top Whiteboard Toolbar */}
-              <div className="h-11 sm:h-14 lg:h-16 px-1.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 z-10 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-xl shadow-lg text-slate-200 overflow-x-auto no-scrollbar touch-pan-x shrink-0">
-                {/* Tool Selector */}
-                <div className="flex items-center gap-0.5 bg-slate-800/80 p-0.5 rounded-lg sm:rounded-xl border border-slate-700/60 shrink-0">
-                  <button
-                    onClick={() => setActiveTool("pen")}
-                    className={`p-1.5 sm:p-2 rounded-md sm:rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
-                      activeTool === "pen" ? "bg-blue-600 text-white shadow-md shadow-blue-500/30" : "text-slate-400 hover:text-white"
-                    }`}
-                    title="Smooth Pen"
-                  >
-                    <PenTool className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">Pen</span>
-                  </button>
+              {isAcademic ? (
+                <div className="h-11 sm:h-14 px-3 sm:px-6 flex items-center justify-between z-10 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-xl shadow-lg text-slate-200 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs sm:text-sm font-bold text-white">Tutor Digital Whiteboard • Live Synchronized Stream</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-500/40 font-semibold">
+                      Observer Mode
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setBoardTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 transition-all cursor-pointer"
+                      title="Toggle Theme"
+                    >
+                      {boardTheme === "dark" ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-blue-400" />}
+                      <span className="hidden md:inline">{boardTheme === "dark" ? "Paper Grid" : "Blackboard"}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-11 sm:h-14 lg:h-16 px-1.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 z-10 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-xl shadow-lg text-slate-200 overflow-x-auto no-scrollbar touch-pan-x shrink-0">
+                  {/* Tool Selector */}
+                  <div className="flex items-center gap-0.5 bg-slate-800/80 p-0.5 rounded-lg sm:rounded-xl border border-slate-700/60 shrink-0">
+                    <button
+                      onClick={() => setActiveTool("pen")}
+                      className={`p-1.5 sm:p-2 rounded-md sm:rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+                        activeTool === "pen" ? "bg-blue-600 text-white shadow-md shadow-blue-500/30" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="Smooth Pen"
+                    >
+                      <PenTool className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Pen</span>
+                    </button>
 
                   <button
                     onClick={() => setActiveTool("highlighter")}
@@ -3097,6 +3244,7 @@ const LiveStudioStage = ({
                   </button>
                 </div>
               </div>
+              )}
 
               {/* Whiteboard Workspace with Responsive Edge-to-Edge Canvas Frame */}
               <div className="flex-1 min-h-0 min-w-0 w-full h-full flex items-center justify-center p-0 sm:p-2 relative overflow-hidden bg-slate-950/90">
@@ -3108,26 +3256,39 @@ const LiveStudioStage = ({
                       : "bg-[#f8fafc] border-slate-300/80 shadow-slate-900/10"
                   }`}
                 >
-                  <canvas
-                    ref={canvasRef}
-                    onPointerDown={startDrawing}
-                    onPointerMove={draw}
-                    onPointerUp={stopDrawing}
-                    onPointerCancel={stopDrawing}
-                    className={`block touch-none select-none my-auto mx-auto shadow-2xl rounded-xl transition-shadow ${
-                      activeTool === "eraser"
-                        ? "cursor-cell"
-                        : activeTool === "text"
-                        ? "cursor-text"
-                        : "cursor-crosshair"
-                    }`}
-                  />
+                  {/* If Academic Manager (Observer) and remote whiteboard data received, render live synchronized view */}
+                  {isAcademic && remoteWhiteboardUrl ? (
+                    <div className="w-full h-full flex items-center justify-center p-1 sm:p-2 overflow-auto">
+                      <img
+                        src={remoteWhiteboardUrl}
+                        alt="Tutor Digital Whiteboard"
+                        className="max-w-full max-h-full object-contain shadow-2xl rounded-xl z-0"
+                      />
+                    </div>
+                  ) : (
+                    <canvas
+                      ref={canvasRef}
+                      onPointerDown={isAcademic ? undefined : startDrawing}
+                      onPointerMove={isAcademic ? undefined : draw}
+                      onPointerUp={isAcademic ? undefined : stopDrawing}
+                      onPointerCancel={isAcademic ? undefined : stopDrawing}
+                      className={`block touch-none select-none my-auto mx-auto shadow-2xl rounded-xl transition-shadow ${
+                        isAcademic
+                          ? "cursor-default"
+                          : activeTool === "eraser"
+                          ? "cursor-cell"
+                          : activeTool === "text"
+                          ? "cursor-text"
+                          : "cursor-crosshair"
+                      }`}
+                    />
+                  )}
 
                   {/* Floating HD Studio Badge */}
-                  <div className="absolute top-1.5 sm:top-3 left-1.5 sm:left-3 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] sm:text-[11px] font-medium text-slate-300 pointer-events-none select-none">
+                  <div className="absolute top-1.5 sm:top-3 left-1.5 sm:left-3 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-[9px] sm:text-[11px] font-medium text-slate-300 pointer-events-none select-none z-10">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span className="hidden sm:inline">Studio Board • HD Live</span>
-                    <span className="sm:hidden font-mono">HD Live</span>
+                    <span className="hidden sm:inline">{isAcademic ? "Tutor Whiteboard • Live Sync" : "Studio Board • HD Live"}</span>
+                    <span className="sm:hidden font-mono">{isAcademic ? "Live Sync" : "HD Live"}</span>
                   </div>
 
                   {/* Floating Document Presentation Control Bar */}
@@ -3638,19 +3799,21 @@ const LiveStudioStage = ({
             <span className="sm:hidden">{activeTab === "whiteboard" ? "Stage" : "Board"}</span>
           </button>
 
-          {/* Quick Present Document Button */}
-          <button
-            onClick={() => {
-              setActiveTab("whiteboard");
-              setTimeout(() => docInputRef.current?.click(), 100);
-            }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl text-xs font-semibold bg-blue-600/90 hover:bg-blue-600 text-white border border-blue-500/50 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
-            title="Present Image, PDF, or Document"
-          >
-            <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Present Doc</span>
-            <span className="sm:hidden">Doc</span>
-          </button>
+          {/* Quick Present Document Button (Only Tutor / Host) */}
+          {!isAcademic && (
+            <button
+              onClick={() => {
+                setActiveTab("whiteboard");
+                setTimeout(() => docInputRef.current?.click(), 100);
+              }}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl text-xs font-semibold bg-blue-600/90 hover:bg-blue-600 text-white border border-blue-500/50 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+              title="Present Image, PDF, or Document"
+            >
+              <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Present Doc</span>
+              <span className="sm:hidden">Doc</span>
+            </button>
+          )}
         </div>
 
         {/* Core Media Controls with Mic Speaking Animations & Raised Hands */}
@@ -4392,9 +4555,19 @@ const TutorLiveStudioPage = () => {
         actual_start: freshStartIso
       }));
 
-      // Every time tutor joins/rejoins, reset session timer strictly from 0:00
+      // Preserve session timer across browser reload: Keep existing startMs if within valid class window
       if (id) {
-        sessionStorage.setItem(`isml_class_start_${id}`, freshStartMs.toString());
+        const existingStart = sessionStorage.getItem(`isml_class_start_${id}`) || localStorage.getItem(`isml_class_start_${id}`);
+        const parsedExisting = existingStart ? parseInt(existingStart, 10) : null;
+        const isExistingValid = parsedExisting && (Date.now() - parsedExisting) >= 0 && (Date.now() - parsedExisting) < (6 * 3600 * 1000);
+
+        if (isExistingValid) {
+          sessionStorage.setItem(`isml_class_start_${id}`, parsedExisting.toString());
+          localStorage.setItem(`isml_class_start_${id}`, parsedExisting.toString());
+        } else {
+          sessionStorage.setItem(`isml_class_start_${id}`, freshStartMs.toString());
+          localStorage.setItem(`isml_class_start_${id}`, freshStartMs.toString());
+        }
       }
 
       setToken(sessionRes.token);

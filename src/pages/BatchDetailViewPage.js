@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import AcademicNotificationBell from '../components/AcademicNotificationBell';
 import ManagerNotificationBell from '../components/ManagerNotificationBell';
-import { getBatchById, getUserById, getEnrolledStudentsByBatch, getGMeetsByBatch, createGMeet, updateGMeet, deleteGMeet, getStudentPaymentDetails, getCurrentUserProfile, getBatchStudentsWithMarks, saveBatchMarks, submitBatchMarks, generateCertificate, approveGeneratedCertificate, deleteGeneratedCertificate } from '../services/Api';
-import { Trash2, Upload } from 'lucide-react';
+import { getBatchById, getUserById, getEnrolledStudentsByBatch, getGMeetsByBatch, createGMeet, updateGMeet, deleteGMeet, getStudentPaymentDetails, getCurrentUserProfile, getBatchStudentsWithMarks, saveBatchMarks, submitBatchMarks, generateCertificate, approveGeneratedCertificate, deleteGeneratedCertificate, getNotes } from '../services/Api';
+import { Trash2, Upload, BookOpen, FileText, ExternalLink, Eye, Download, Calendar } from 'lucide-react';
 
 const BatchDetailViewPage = () => {
   const { batchId } = useParams();
@@ -29,7 +29,11 @@ const BatchDetailViewPage = () => {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [error, setError] = useState(null);
-  const [rightView, setRightView] = useState('student'); // 'student', 'session', or 'assessment'
+  const [rightView, setRightView] = useState('student'); // 'student', 'session', 'assessment', or 'materials'
+  const [notes, setNotes] = useState([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [notesError, setNotesError] = useState(null);
+  const [viewingFile, setViewingFile] = useState(null);
 
   const [userRole, setUserRole] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -265,6 +269,7 @@ const BatchDetailViewPage = () => {
           
           // Fetch enrolled students for this batch
           await fetchEnrolledStudents(batchId);
+          fetchBatchNotes(batchId);
         } else {
           throw new Error(batchResponse?.error || batchResponse?.message || 'Failed to load batch details');
         }
@@ -665,6 +670,29 @@ const BatchDetailViewPage = () => {
     return 0;
   };
 
+  // Fetch notes for batch
+  const fetchBatchNotes = async (bId) => {
+    try {
+      setLoadingNotes(true);
+      setNotesError(null);
+      const token = localStorage.getItem('token');
+      const response = await getNotes(bId || batchId, token);
+      if (response && Array.isArray(response)) {
+        setNotes(response);
+      } else if (response && Array.isArray(response.data)) {
+        setNotes(response.data);
+      } else {
+        setNotes([]);
+      }
+    } catch (err) {
+      console.error('Error fetching batch notes:', err);
+      setNotesError('Failed to load batch materials');
+      setNotes([]);
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
   // Fetch data when rightView changes
   useEffect(() => {
     if (batchId && batch) {
@@ -672,6 +700,8 @@ const BatchDetailViewPage = () => {
         fetchSessions(batchId);
       } else if (rightView === 'assessment') {
         fetchAssessmentData(batchId);
+      } else if (rightView === 'materials') {
+        fetchBatchNotes(batchId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1476,6 +1506,24 @@ const BatchDetailViewPage = () => {
                       Certificates
                     </button>
                   )}
+                  <button
+                    onClick={() => setRightView('materials')}
+                    className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      rightView === 'materials'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Materials</span>
+                    {notes.length > 0 && (
+                      <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                        rightView === 'materials' ? 'bg-white text-blue-700 font-bold' : 'bg-blue-100 text-blue-700 font-semibold'
+                      }`}>
+                        {notes.length}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -2613,7 +2661,221 @@ const BatchDetailViewPage = () => {
                     </div>
                   )}
                 </div>
+              ) : rightView === 'materials' ? (
+                /* Materials & Notes Section */
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-200">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md text-white">
+                        <BookOpen className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-800">Batch Materials & Notes</h4>
+                        <p className="text-xs sm:text-sm text-gray-500">
+                          Resources and study files shared by tutors for this batch
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-semibold">
+                        {notes.length} Material{notes.length === 1 ? '' : 's'}
+                      </span>
+                      <button
+                        onClick={() => fetchBatchNotes(batchId)}
+                        disabled={loadingNotes}
+                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className={`w-3.5 h-3.5 ${loadingNotes ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  {loadingNotes ? (
+                    <div className="flex flex-col items-center justify-center py-16">
+                      <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-100 border-t-blue-600"></div>
+                      <p className="mt-3 text-sm font-medium text-gray-500">Loading batch materials...</p>
+                    </div>
+                  ) : notesError ? (
+                    <div className="text-center py-10 bg-red-50/60 border border-red-200 rounded-xl p-6">
+                      <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-bold text-red-800 mb-1">Failed to Load Materials</h4>
+                      <p className="text-xs text-red-600 mb-4">{notesError}</p>
+                      <button
+                        onClick={() => fetchBatchNotes(batchId)}
+                        className="px-4 py-2 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors shadow"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  ) : notes.length === 0 ? (
+                    <div className="text-center py-16 bg-gradient-to-b from-gray-50 to-white rounded-xl border border-dashed border-gray-300 p-8">
+                      <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+                        <BookOpen className="w-8 h-8" />
+                      </div>
+                      <h4 className="text-base font-bold text-gray-800 mb-1">No Materials Shared Yet</h4>
+                      <p className="text-sm text-gray-500 max-w-md mx-auto">
+                        The tutor has not shared any study materials, reference links, or notes for this batch yet.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-[700px] overflow-y-auto pr-1">
+                      {notes.map((note, index) => {
+                        const noteFiles = Array.isArray(note.files) ? note.files : (note.files ? [note.files] : []);
+                        return (
+                          <div
+                            key={note.notes_id || index}
+                            className="bg-gradient-to-br from-white to-gray-50/50 border border-gray-200 hover:border-blue-300 rounded-xl p-5 shadow-sm hover:shadow-md transition-all duration-200"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2.5 bg-blue-100/70 text-blue-600 rounded-lg flex-shrink-0 mt-0.5">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <h5 className="text-base font-bold text-gray-900 leading-snug">
+                                    {note.title || 'Untitled Note'}
+                                  </h5>
+                                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                    <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                    <span>
+                                      {note.created_at
+                                        ? new Date(note.created_at).toLocaleDateString('en-US', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          })
+                                        : 'Recently added'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Note Description / Body */}
+                            {note.note && (
+                              <div className="bg-white/80 border border-gray-100 rounded-lg p-3.5 mb-3.5">
+                                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                  {note.note}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Resource Link & File Attachments */}
+                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+                              {note.link && (
+                                <a
+                                  href={note.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow-sm transition-all"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span>Open Resource Link</span>
+                                </a>
+                              )}
+
+                              {noteFiles.map((fileUrl, fIdx) => {
+                                const fileName = fileUrl ? (fileUrl.split('/').pop()?.split('?')[0] || `Attachment ${fIdx + 1}`) : `Attachment ${fIdx + 1}`;
+                                const isPdf = fileUrl && (fileUrl.toLowerCase().includes('.pdf'));
+
+                                return (
+                                  <div key={fIdx} className="inline-flex items-center gap-1.5">
+                                    {isPdf ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewingFile({ noteId: note.notes_id, fileUrl, fileName })}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold rounded-lg transition-colors"
+                                      >
+                                        <Eye className="w-3.5 h-3.5 text-purple-600" />
+                                        <span className="max-w-[180px] truncate">Preview {fileName}</span>
+                                      </button>
+                                    ) : null}
+
+                                    <a
+                                      href={fileUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      download
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+                                      title={fileName}
+                                    >
+                                      <Download className="w-3.5 h-3.5 text-gray-500" />
+                                      <span className="max-w-[160px] truncate">{fileName}</span>
+                                    </a>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PDF / File Preview Modal */}
+      {viewingFile && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => setViewingFile(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-gray-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <FileText className="w-5 h-5 text-blue-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold truncate">{viewingFile.fileName}</h3>
+                  <p className="text-xs text-gray-400">Study Material Document Preview</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={viewingFile.fileUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download
+                </a>
+                <button
+                  onClick={() => setViewingFile(null)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Iframe */}
+            <div className="flex-1 bg-gray-100 p-2 overflow-hidden">
+              <iframe
+                src={`${viewingFile.fileUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                className="w-full h-full rounded-lg border-0 shadow-inner"
+                title={viewingFile.fileName}
+              />
             </div>
           </div>
         </div>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { createNote, createNoteWithFiles, getNotes, deleteNote } from '../services/Api';
-import { BookOpen, FileText, Calendar, ExternalLink, Download, Eye, Tag, Plus, Trash2, AlertCircle, Loader2, Upload, X, Link2, ChevronLeft } from 'lucide-react';
+import { BookOpen, FileText, Calendar, ExternalLink, Download, Eye, Tag, Plus, Trash2, AlertCircle, Loader2, Upload, X, Link2, ChevronLeft, ArrowLeft } from 'lucide-react';
 
 function BatchNotesPage() {
   const { batchId } = useParams();
+  const navigate = useNavigate();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -186,17 +187,26 @@ function BatchNotesPage() {
             <div className="max-w-7xl mx-auto">
               {/* Enhanced Header */}
               <div className="mb-6 sm:mb-8">
-                <div className="flex items-center space-x-3 sm:space-x-4 mb-4">
-                  <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl shadow-lg">
-                    <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                      Course Notes
-                    </h1>
-                    <p className="text-sm sm:text-base text-gray-600 mt-1">
-                      Share resources and notes with your batch
-                    </p>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3 sm:space-x-4">
+                    <button
+                      onClick={() => navigate(-1)}
+                      className="p-2 sm:p-2.5 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-sm transition-colors text-gray-700"
+                      title="Go Back"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl shadow-lg">
+                      <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    </div>
+                    <div>
+                      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                        Course Notes
+                      </h1>
+                      <p className="text-sm sm:text-base text-gray-600 mt-0.5">
+                        Share resources and notes with your batch
+                      </p>
+                    </div>
                   </div>
                 </div>
                 

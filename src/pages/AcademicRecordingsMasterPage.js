@@ -29,10 +29,12 @@ import {
   GraduationCap,
   ArrowUpDown,
   Sparkles,
-  Info
+  Info,
+  ArrowRight,
+  ExternalLink
 } from "lucide-react";
 import { getAllRecordings, getRecordingStreamUrl, uploadRecordingVideo } from "../services/liveClassApi";
-import { getBatches } from "../services/Api";
+import { getBatches, getTeacherBatches } from "../services/Api";
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -110,10 +112,16 @@ const AcademicRecordingsMasterPage = () => {
     }
 
     try {
-      const batchRes = await getBatches(token);
-      const batchList = Array.isArray(batchRes) 
-        ? batchRes 
-        : (batchRes?.data || batchRes?.batches || []);
+      let batchList = [];
+      if (isTeacher) {
+        const tBatchRes = await getTeacherBatches(token);
+        batchList = tBatchRes?.data || (Array.isArray(tBatchRes) ? tBatchRes : []);
+      } else {
+        const batchRes = await getBatches(token);
+        batchList = Array.isArray(batchRes) 
+          ? batchRes 
+          : (batchRes?.data || batchRes?.batches || []);
+      }
       setBatches(batchList);
     } catch (err) {
       console.error("Error loading batches for recordings:", err);
@@ -412,9 +420,16 @@ const AcademicRecordingsMasterPage = () => {
         <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
           <div>
             <div className="flex items-start justify-between gap-2 mb-1">
-              <h3 className="font-bold text-slate-800 text-sm sm:text-base line-clamp-1">
-                {item.display_title || item.live_classes?.title || "Untitled Lecture"}
-              </h3>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {item.part_number && (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-extrabold bg-purple-100 text-purple-700">
+                    Part {item.part_number}
+                  </span>
+                )}
+                <h3 className="font-bold text-slate-800 text-sm sm:text-base line-clamp-1">
+                  {item.display_title || item.live_classes?.title || "Untitled Lecture"}
+                </h3>
+              </div>
             </div>
 
             <p className="text-xs text-slate-500 line-clamp-1 mb-2">
@@ -561,89 +576,180 @@ const AcademicRecordingsMasterPage = () => {
           </div>
         </div>
 
-        {/* 🌟 BATCH SELECTION HUB (Batch-wise Selector Pills) */}
+        {/* 🌟 USER-FRIENDLY BATCH CARDS SELECTION HUB */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <GraduationCap className="w-4 h-4 text-purple-600" />
-              <span className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider">
-                Select Batch to View Sessions:
-              </span>
-              <span className="text-xs text-slate-400 hidden sm:inline">
-                (Click any batch to view its session videos in order)
-              </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg">
+                  <GraduationCap className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm sm:text-base font-extrabold text-slate-800">
+                  {isTeacher ? "Select Your Batch to View Lectures" : "Select Batch Archive:"}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Click any batch card below to view its recorded sessions organized in chronological order
+              </p>
             </div>
 
-            {/* View Mode Toggle */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-              <button
-                onClick={() => setViewMode("grouped")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                  viewMode === "grouped"
-                    ? "bg-white text-purple-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Group recordings by batch"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Grouped by Batch</span>
-              </button>
-              <button
-                onClick={() => setViewMode("grid")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                  viewMode === "grid"
-                    ? "bg-white text-purple-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="View all in unified grid"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Grid View</span>
-              </button>
+            {/* View Mode & Quick Reset */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              {batchFilter && (
+                <button
+                  onClick={() => setBatchFilter("")}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Show All Batches</span>
+                </button>
+              )}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setViewMode("grouped")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    viewMode === "grouped"
+                      ? "bg-white text-purple-700 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  title="Group recordings by batch"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Grouped</span>
+                </button>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    viewMode === "grid"
+                      ? "bg-white text-purple-700 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  title="View all in unified grid"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Grid</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Batch Pills List */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-200">
-            {/* All Batches Pill */}
-            <button
+          {/* 🎴 INTERACTIVE BATCH CARDS GRID */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 mb-4">
+            {/* "All Batches" Card */}
+            <div
               onClick={() => setBatchFilter("")}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+              className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between group ${
                 batchFilter === ""
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-500/20 ring-2 ring-purple-600/30"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  ? "bg-gradient-to-br from-purple-700 to-indigo-800 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40"
+                  : "bg-slate-50 hover:bg-white hover:shadow-md border-slate-200 text-slate-800 hover:border-purple-300"
               }`}
             >
-              <span>All Batches</span>
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                batchFilter === "" ? "bg-purple-800 text-white" : "bg-white text-slate-600"
-              }`}>
-                {recordings.length}
-              </span>
-            </button>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    batchFilter === "" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700"
+                  }`}>
+                    Global Archive
+                  </span>
+                  <BookOpen className={`w-4 h-4 ${batchFilter === "" ? "text-purple-200" : "text-slate-400 group-hover:text-purple-600"}`} />
+                </div>
+                <h4 className="font-extrabold text-sm sm:text-base line-clamp-1">
+                  All My Batches
+                </h4>
+                <p className={`text-xs mt-1 ${batchFilter === "" ? "text-purple-100" : "text-slate-500"}`}>
+                  View videos from all assigned batches
+                </p>
+              </div>
 
-            {/* Individual Batches */}
+              <div className={`mt-3 pt-2.5 border-t flex items-center justify-between text-xs font-semibold ${
+                batchFilter === "" ? "border-white/20 text-purple-100" : "border-slate-200 text-slate-600"
+              }`}>
+                <span>{recordings.length} total videos</span>
+                <span className="flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  {batchFilter === "" ? "Active" : "View All"} <ArrowRight className="w-3.5 h-3.5" />
+                </span>
+              </div>
+            </div>
+
+            {/* Individual Batch Cards */}
             {batches.map((b) => {
               const bId = b.batch_id || b.id;
               const count = batchRecordingCounts[bId] || 0;
               const isSelected = batchFilter === bId;
 
               return (
-                <button
+                <div
                   key={bId}
                   onClick={() => setBatchFilter(bId)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                  className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between group ${
                     isSelected
-                      ? "bg-purple-600 text-white shadow-md shadow-purple-500/20 ring-2 ring-purple-600/30"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                      ? "bg-gradient-to-br from-purple-700 to-indigo-800 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40"
+                      : "bg-slate-50 hover:bg-white hover:shadow-md border-slate-200 text-slate-800 hover:border-purple-300"
                   }`}
                 >
-                  <span className="truncate max-w-[200px]">{b.batch_name}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                    isSelected ? "bg-purple-800 text-white" : "bg-white text-slate-600"
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold font-mono ${
+                        isSelected
+                          ? "bg-white/20 text-white"
+                          : count > 0 ? "bg-purple-100 text-purple-700 border border-purple-200" : "bg-slate-200 text-slate-600"
+                      }`}>
+                        {count} {count === 1 ? "Video" : "Videos"}
+                      </span>
+                      <GraduationCap className={`w-4 h-4 ${isSelected ? "text-purple-200" : "text-slate-400 group-hover:text-purple-600"}`} />
+                    </div>
+
+                    <h4 className="font-extrabold text-sm sm:text-base line-clamp-1 group-hover:text-purple-600 transition-colors">
+                      {b.batch_name}
+                    </h4>
+
+                    <p className={`text-xs mt-1 line-clamp-1 ${isSelected ? "text-purple-100" : "text-slate-500"}`}>
+                      {b.courses?.course_name || b.course_name || "General Course"}
+                    </p>
+                  </div>
+
+                  <div className={`mt-3 pt-2.5 border-t flex items-center justify-between text-xs font-semibold ${
+                    isSelected ? "border-white/20 text-purple-100" : "border-slate-200 text-slate-600"
                   }`}>
-                    {count} {count === 1 ? "video" : "videos"}
-                  </span>
+                    <span className="truncate">
+                      {b.teachers?.users?.name || b.teacher_name ? `Faculty: ${b.teachers?.users?.name || b.teacher_name}` : "Assigned"}
+                    </span>
+                    <span className={`flex items-center gap-1 font-bold group-hover:translate-x-1 transition-transform ${
+                      isSelected ? "text-white" : "text-purple-600"
+                    }`}>
+                      {isSelected ? "Selected" : "Open"} <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Horizontal Quick Pill Scroll (Compact Mobile Navigation) */}
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+              Quick Filter:
+            </span>
+            <button
+              onClick={() => setBatchFilter("")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all ${
+                batchFilter === "" ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              All ({recordings.length})
+            </button>
+            {batches.map((b) => {
+              const bId = b.batch_id || b.id;
+              const count = batchRecordingCounts[bId] || 0;
+              const isSelected = batchFilter === bId;
+              return (
+                <button
+                  key={`pill-${bId}`}
+                  onClick={() => setBatchFilter(bId)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all truncate max-w-[180px] ${
+                    isSelected ? "bg-purple-600 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {b.batch_name} ({count})
                 </button>
               );
             })}
@@ -816,8 +922,8 @@ const AcademicRecordingsMasterPage = () => {
 
         {/* Video Player Modal */}
         {activeVideo && (
-          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
-            <div className="bg-slate-950 rounded-2xl sm:rounded-3xl max-w-4xl w-full max-h-[96vh] overflow-y-auto shadow-2xl border border-slate-800 flex flex-col animate-in fade-in zoom-in duration-200">
+          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6">
+            <div className="bg-slate-950 rounded-2xl sm:rounded-3xl max-w-5xl lg:max-w-6xl w-full max-h-[96vh] overflow-y-auto shadow-2xl border border-slate-800 flex flex-col animate-in fade-in zoom-in duration-200">
               {/* Modal Top Bar */}
               <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-white">
                 <div>

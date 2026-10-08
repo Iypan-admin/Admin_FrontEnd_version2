@@ -1105,7 +1105,15 @@ function App() {
             <Route
               path="/teacher/batch/:batchId/notes"
               element={
-                <ProtectedRoute allowedRole="teacher">
+                <ProtectedRoute allowedRoles={["teacher", "academic", "manager", "admin"]}>
+                  <BatchNotesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/academic/batch/:batchId/notes"
+              element={
+                <ProtectedRoute allowedRoles={["academic", "manager", "admin", "teacher"]}>
                   <BatchNotesPage />
                 </ProtectedRoute>
               }
