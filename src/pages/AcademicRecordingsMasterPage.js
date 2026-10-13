@@ -4,6 +4,7 @@ import Navbar from "../components/Navbar";
 import {
   Film,
   Play,
+  Pause,
   Search,
   Clock,
   Calendar,
@@ -20,6 +21,10 @@ import {
   BookOpen,
   RotateCcw,
   RotateCw,
+  Volume2,
+  VolumeX,
+  Maximize,
+  Minimize,
   AlertCircle,
   Menu,
   Radio,
@@ -85,9 +90,25 @@ const AcademicRecordingsMasterPage = () => {
   const [playbackError, setPlaybackError] = useState(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const videoRef = React.useRef(null);
+  const playerContainerRef = React.useRef(null);
+  const progressBarRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
   const [uploadingId, setUploadingId] = useState(null);
   const [targetUploadRec, setTargetUploadRec] = useState(null);
+
+  // Advanced Video Player Controls State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState(0);
+  const [hoverTime, setHoverTime] = useState(null);
+  const [hoverX, setHoverX] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const controlsTimeoutRef = React.useRef(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     return localStorage.getItem("sidebarCollapsed") === "true" ? "6rem" : "16rem";
@@ -158,12 +179,95 @@ const AcademicRecordingsMasterPage = () => {
         title: rec.display_title || rec.live_classes?.title || "Class Recording",
         status: streamRes.status || rec.status || "READY"
       });
+      setCurrentTime(0);
+      setSeekValue(0);
+      setIsPlaying(true);
+      setShowControls(true);
+      setDuration(Number(rec.duration_seconds) || 0);
     } catch (err) {
       console.error("Failed to load recording stream:", err);
       alert(err.message || "Failed to load recording video. Please verify the video file exists.");
     } finally {
       setPlaybackLoading(false);
     }
+  };
+
+  const getEffectiveDuration = () => {
+    if (duration > 0 && isFinite(duration)) return duration;
+    if (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
+      return videoRef.current.duration;
+    }
+    if (activeVideo?.duration_seconds && Number(activeVideo.duration_seconds) > 0) {
+      return Number(activeVideo.duration_seconds);
+    }
+    return 0;
+  };
+
+  const formatTime = (seconds) => {
+    if (!seconds || isNaN(seconds) || !isFinite(seconds) || seconds < 0) return '00:00';
+    const totalSecs = Math.floor(seconds);
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    if (hrs > 0) {
+      return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  };
+
+  const commitSeek = (targetTime) => {
+    if (videoRef.current && isFinite(targetTime)) {
+      const effDur = getEffectiveDuration();
+      let clamped = Math.max(0, targetTime);
+      if (effDur > 0) clamped = Math.min(clamped, effDur);
+      videoRef.current.currentTime = clamped;
+      setCurrentTime(clamped);
+      setSeekValue(clamped);
+    }
+  };
+
+  const handleSeekChange = (e) => {
+    const val = parseFloat(e.target.value);
+    setSeekValue(val);
+    setCurrentTime(val);
+  };
+
+  const handleSeekEnd = (e) => {
+    setIsSeeking(false);
+    const targetTime = parseFloat(e.currentTarget.value);
+    commitSeek(targetTime);
+  };
+
+  const handleProgressMouseMove = (e) => {
+    if (!progressBarRef.current) return;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const effDur = getEffectiveDuration();
+    if (effDur <= 0) return;
+    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const percent = clickX / rect.width;
+    setHoverX(clickX);
+    setHoverTime(percent * effDur);
+  };
+
+  const handleProgressClick = (e) => {
+    if (!progressBarRef.current || !videoRef.current) return;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const effDur = getEffectiveDuration();
+    if (effDur <= 0) return;
+    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const targetTime = (clickX / rect.width) * effDur;
+    commitSeek(targetTime);
   };
 
   const handleSpeedChange = (speed) => {
@@ -177,13 +281,53 @@ const AcademicRecordingsMasterPage = () => {
     if (videoRef.current) {
       const vid = videoRef.current;
       const cur = vid.currentTime;
-      const dur = (isFinite(vid.duration) && vid.duration > 0)
-        ? vid.duration
-        : (activeVideo?.duration_seconds || 0);
+      const dur = getEffectiveDuration();
       let nextTime = cur + seconds;
       if (nextTime < 0) nextTime = 0;
       if (dur > 0 && nextTime > dur) nextTime = dur;
       vid.currentTime = nextTime;
+      setCurrentTime(nextTime);
+      setSeekValue(nextTime);
+    }
+  };
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    if (isMuted) {
+      videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
+      videoRef.current.muted = true;
+      setIsMuted(true);
+    }
+  };
+
+  const handleVolumeChange = (e) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    if (videoRef.current) {
+      videoRef.current.volume = val;
+      videoRef.current.muted = val === 0;
+      setIsMuted(val === 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!playerContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      playerContainerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch((err) => console.error(err));
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch((err) => console.error(err));
+    }
+  };
+
+  const handleMouseMove = () => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3500);
     }
   };
 
@@ -576,49 +720,76 @@ const AcademicRecordingsMasterPage = () => {
           </div>
         </div>
 
-        {/* 🌟 USER-FRIENDLY BATCH CARDS SELECTION HUB */}
+        {/* 🌟 USER-FRIENDLY BATCH DROPDOWN & FILTER HUB */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg">
-                  <GraduationCap className="w-4 h-4" />
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 sm:gap-4">
+            {/* Left: Responsive Batch Selector Dropdown */}
+            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="p-2 bg-purple-100 text-purple-700 rounded-xl">
+                  <GraduationCap className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm sm:text-base font-extrabold text-slate-800">
-                  {isTeacher ? "Select Your Batch to View Lectures" : "Select Batch Archive:"}
-                </h3>
+                <div>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Select Batch</span>
+                  <span className="text-xs text-slate-400 hidden sm:inline">Filter recordings by batch</span>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Click any batch card below to view its recorded sessions organized in chronological order
-              </p>
-            </div>
 
-            {/* View Mode & Quick Reset */}
-            <div className="flex items-center gap-2 self-start sm:self-auto">
+              {/* Clean User-Friendly Select Dropdown */}
+              <div className="relative flex-1">
+                <select
+                  value={batchFilter}
+                  onChange={(e) => setBatchFilter(e.target.value)}
+                  className="w-full pl-3.5 pr-10 py-2.5 sm:py-3 bg-slate-50 hover:bg-slate-100/80 border border-slate-300 focus:border-purple-500 focus:bg-white rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer shadow-xs"
+                >
+                  <option value="" className="font-bold text-purple-700">
+                    ✨ All Batches ({recordings.length} Total Videos)
+                  </option>
+                  {batches.map((b) => {
+                    const bId = b.batch_id || b.id;
+                    const count = batchRecordingCounts[bId] || 0;
+                    const courseText = b.courses?.course_name || b.course_name ? ` • ${b.courses?.course_name || b.course_name}` : "";
+                    return (
+                      <option key={bId} value={bId} className="text-slate-800 py-1 font-medium">
+                        {b.batch_name} ({count} {count === 1 ? "video" : "videos"}){courseText}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Reset to All Batches Button (if a batch is currently selected) */}
               {batchFilter && (
                 <button
                   onClick={() => setBatchFilter("")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                  title="Clear batch selection"
                 >
-                  <span>Show All Batches</span>
+                  <X className="w-3.5 h-3.5" />
+                  <span>Show All</span>
                 </button>
               )}
+            </div>
+
+            {/* Right: Grouped / Grid View Switcher */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+              <span className="text-xs font-semibold text-slate-400 sm:hidden">Layout:</span>
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                 <button
                   onClick={() => setViewMode("grouped")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     viewMode === "grouped"
                       ? "bg-white text-purple-700 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
-                  title="Group recordings by batch"
+                  title="Group recordings by batch sections"
                 >
                   <Layers className="w-3.5 h-3.5" />
                   <span>Grouped</span>
                 </button>
                 <button
                   onClick={() => setViewMode("grid")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     viewMode === "grid"
                       ? "bg-white text-purple-700 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
@@ -632,170 +803,27 @@ const AcademicRecordingsMasterPage = () => {
             </div>
           </div>
 
-          {/* 🎴 INTERACTIVE BATCH CARDS GRID */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 mb-4">
-            {/* "All Batches" Card */}
-            <div
-              onClick={() => setBatchFilter("")}
-              className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between group ${
-                batchFilter === ""
-                  ? "bg-gradient-to-br from-purple-700 to-indigo-800 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40"
-                  : "bg-slate-50 hover:bg-white hover:shadow-md border-slate-200 text-slate-800 hover:border-purple-300"
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    batchFilter === "" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700"
-                  }`}>
-                    Global Archive
-                  </span>
-                  <BookOpen className={`w-4 h-4 ${batchFilter === "" ? "text-purple-200" : "text-slate-400 group-hover:text-purple-600"}`} />
-                </div>
-                <h4 className="font-extrabold text-sm sm:text-base line-clamp-1">
-                  All My Batches
-                </h4>
-                <p className={`text-xs mt-1 ${batchFilter === "" ? "text-purple-100" : "text-slate-500"}`}>
-                  View videos from all assigned batches
-                </p>
-              </div>
-
-              <div className={`mt-3 pt-2.5 border-t flex items-center justify-between text-xs font-semibold ${
-                batchFilter === "" ? "border-white/20 text-purple-100" : "border-slate-200 text-slate-600"
-              }`}>
-                <span>{recordings.length} total videos</span>
-                <span className="flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                  {batchFilter === "" ? "Active" : "View All"} <ArrowRight className="w-3.5 h-3.5" />
+          {/* Active Batch Summary Tag if selected */}
+          {selectedBatchObj && (
+            <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-slate-700 font-medium">
+                <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 font-bold text-[11px]">
+                  Batch Active
                 </span>
+                <strong className="text-slate-800">{selectedBatchObj.batch_name}</strong>
+                {selectedBatchObj.course_name && (
+                  <span className="text-slate-500 hidden sm:inline">• Course: {selectedBatchObj.course_name}</span>
+                )}
+                {selectedBatchObj.teacher_name && (
+                  <span className="text-slate-500 hidden sm:inline">• Faculty: {selectedBatchObj.teacher_name}</span>
+                )}
               </div>
+              <span className="text-purple-600 font-bold">
+                {filtered.length} {filtered.length === 1 ? "video" : "videos"} available
+              </span>
             </div>
-
-            {/* Individual Batch Cards */}
-            {batches.map((b) => {
-              const bId = b.batch_id || b.id;
-              const count = batchRecordingCounts[bId] || 0;
-              const isSelected = batchFilter === bId;
-
-              return (
-                <div
-                  key={bId}
-                  onClick={() => setBatchFilter(bId)}
-                  className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between group ${
-                    isSelected
-                      ? "bg-gradient-to-br from-purple-700 to-indigo-800 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40"
-                      : "bg-slate-50 hover:bg-white hover:shadow-md border-slate-200 text-slate-800 hover:border-purple-300"
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold font-mono ${
-                        isSelected
-                          ? "bg-white/20 text-white"
-                          : count > 0 ? "bg-purple-100 text-purple-700 border border-purple-200" : "bg-slate-200 text-slate-600"
-                      }`}>
-                        {count} {count === 1 ? "Video" : "Videos"}
-                      </span>
-                      <GraduationCap className={`w-4 h-4 ${isSelected ? "text-purple-200" : "text-slate-400 group-hover:text-purple-600"}`} />
-                    </div>
-
-                    <h4 className="font-extrabold text-sm sm:text-base line-clamp-1 group-hover:text-purple-600 transition-colors">
-                      {b.batch_name}
-                    </h4>
-
-                    <p className={`text-xs mt-1 line-clamp-1 ${isSelected ? "text-purple-100" : "text-slate-500"}`}>
-                      {b.courses?.course_name || b.course_name || "General Course"}
-                    </p>
-                  </div>
-
-                  <div className={`mt-3 pt-2.5 border-t flex items-center justify-between text-xs font-semibold ${
-                    isSelected ? "border-white/20 text-purple-100" : "border-slate-200 text-slate-600"
-                  }`}>
-                    <span className="truncate">
-                      {b.teachers?.users?.name || b.teacher_name ? `Faculty: ${b.teachers?.users?.name || b.teacher_name}` : "Assigned"}
-                    </span>
-                    <span className={`flex items-center gap-1 font-bold group-hover:translate-x-1 transition-transform ${
-                      isSelected ? "text-white" : "text-purple-600"
-                    }`}>
-                      {isSelected ? "Selected" : "Open"} <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Horizontal Quick Pill Scroll (Compact Mobile Navigation) */}
-          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-              Quick Filter:
-            </span>
-            <button
-              onClick={() => setBatchFilter("")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all ${
-                batchFilter === "" ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              All ({recordings.length})
-            </button>
-            {batches.map((b) => {
-              const bId = b.batch_id || b.id;
-              const count = batchRecordingCounts[bId] || 0;
-              const isSelected = batchFilter === bId;
-              return (
-                <button
-                  key={`pill-${bId}`}
-                  onClick={() => setBatchFilter(bId)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all truncate max-w-[180px] ${
-                    isSelected ? "bg-purple-600 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {b.batch_name} ({count})
-                </button>
-              );
-            })}
-          </div>
+          )}
         </div>
-
-        {/* Selected Batch Hero Banner (if a single batch is active) */}
-        {selectedBatchObj && (
-          <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-slate-900 rounded-2xl p-5 sm:p-6 mb-6 text-white shadow-lg relative overflow-hidden">
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-purple-200 text-xs font-bold uppercase tracking-wider mb-1">
-                  <GraduationCap className="w-4 h-4 text-purple-300" />
-                  <span>Active Batch Archive</span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                  {selectedBatchObj.batch_name}
-                </h2>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-purple-100 mt-2">
-                  {selectedBatchObj.course_name && (
-                    <span className="bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-sm">
-                      Course: <strong>{selectedBatchObj.course_name}</strong>
-                    </span>
-                  )}
-                  {selectedBatchObj.teacher_name && (
-                    <span className="bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-sm">
-                      Faculty: <strong>{selectedBatchObj.teacher_name}</strong>
-                    </span>
-                  )}
-                  <span className="bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-sm">
-                    Total Videos: <strong>{filtered.length}</strong>
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setBatchFilter("")}
-                  className="px-3.5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-semibold backdrop-blur-sm transition-all"
-                >
-                  ← Show All Batches
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Search & Sort Filters Bar */}
         <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row gap-3 sm:gap-4 items-stretch md:items-center justify-between">
@@ -922,10 +950,10 @@ const AcademicRecordingsMasterPage = () => {
 
         {/* Video Player Modal */}
         {activeVideo && (
-          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6">
-            <div className="bg-slate-950 rounded-2xl sm:rounded-3xl max-w-5xl lg:max-w-6xl w-full max-h-[96vh] overflow-y-auto shadow-2xl border border-slate-800 flex flex-col animate-in fade-in zoom-in duration-200">
+          <div className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+            <div className="bg-slate-950 rounded-2xl sm:rounded-3xl max-w-5xl lg:max-w-6xl w-full max-h-[96vh] overflow-hidden shadow-2xl border border-slate-800 flex flex-col">
               {/* Modal Top Bar */}
-              <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-white">
+              <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-base text-slate-100">
@@ -967,8 +995,12 @@ const AcademicRecordingsMasterPage = () => {
                 </button>
               </div>
 
-              {/* Video Player */}
-              <div className="relative bg-black aspect-video flex items-center justify-center">
+              {/* Video Player & Stage */}
+              <div
+                ref={playerContainerRef}
+                onMouseMove={handleMouseMove}
+                className="relative bg-black aspect-video flex items-center justify-center select-none group"
+              >
                 {playbackError ? (
                   <div className="flex flex-col items-center justify-center text-center p-6 text-slate-300">
                     <AlertCircle className="w-12 h-12 text-rose-500 mb-3" />
@@ -982,87 +1014,220 @@ const AcademicRecordingsMasterPage = () => {
                     </button>
                   </div>
                 ) : (
-                  <video
-                    ref={videoRef}
-                    key={activeVideo.playbackUrl}
-                    src={activeVideo.playbackUrl}
-                    controls
-                    autoPlay
-                    playsInline
-                    onLoadedMetadata={(e) => {
-                      const vid = e.currentTarget;
-                      vid.volume = 1.0;
-                      vid.muted = false;
-                    }}
-                    onPlay={(e) => {
-                      e.currentTarget.volume = 1.0;
-                      e.currentTarget.muted = false;
-                    }}
-                    onError={(e) => {
-                      console.error("Video stream load error:", e);
-                      setPlaybackError("Unable to load recorded class video. Please check your network or try refreshing.");
-                    }}
-                    className="w-full h-full object-contain"
-                  />
-                )}
-              </div>
+                  <>
+                    <video
+                      ref={videoRef}
+                      key={activeVideo.playbackUrl}
+                      src={activeVideo.playbackUrl}
+                      onClick={togglePlay}
+                      autoPlay
+                      playsInline
+                      onTimeUpdate={() => {
+                        if (!videoRef.current) return;
+                        const cur = videoRef.current.currentTime;
+                        if (!isSeeking) {
+                          setCurrentTime(cur);
+                        }
+                        const vidDur = videoRef.current.duration;
+                        if (isFinite(vidDur) && vidDur > 0 && Math.abs(vidDur - duration) > 1) {
+                          setDuration(vidDur);
+                        } else if ((duration === 0 || !isFinite(duration)) && activeVideo?.duration_seconds) {
+                          setDuration(Number(activeVideo.duration_seconds));
+                        }
+                      }}
+                      onLoadedMetadata={(e) => {
+                        const vid = e.currentTarget;
+                        vid.volume = volume;
+                        vid.muted = isMuted;
+                        const vidDur = vid.duration;
+                        if (isFinite(vidDur) && !isNaN(vidDur) && vidDur > 0) {
+                          setDuration(vidDur);
+                        } else if (activeVideo?.duration_seconds) {
+                          setDuration(Number(activeVideo.duration_seconds));
+                        }
+                      }}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onEnded={() => setIsPlaying(false)}
+                      onError={(e) => {
+                        console.error("Video stream load error:", e);
+                        setPlaybackError("Unable to load recorded class video. Please check your network or try refreshing.");
+                      }}
+                      className="w-full h-full object-contain cursor-pointer"
+                    />
 
-              {/* Player Controls Bar */}
-              <div className="p-3 sm:p-4 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 text-slate-300">
-                <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 text-xs w-full sm:w-auto">
-                  {/* Skip Buttons */}
-                  <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700">
-                    <button
-                      onClick={() => skipTime(-10)}
-                      className="px-2 sm:px-2.5 py-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
-                      title="Rewind 10 seconds"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      -10s
-                    </button>
-                    <button
-                      onClick={() => skipTime(10)}
-                      className="px-2 sm:px-2.5 py-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
-                      title="Forward 10 seconds"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      +10s
-                    </button>
-                  </div>
+                    {/* Big Center Play Button Overlay when Paused */}
+                    {!isPlaying && (
+                      <button
+                        onClick={togglePlay}
+                        className="absolute w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600/90 text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform cursor-pointer z-20"
+                        title="Click to Play"
+                      >
+                        <Play className="w-8 h-8 fill-white ml-1" />
+                      </button>
+                    )}
 
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <Gauge className="w-4 h-4 text-purple-400 shrink-0" />
-                    <span className="font-semibold text-slate-400 hidden sm:inline">Speed:</span>
-                    <select
-                      value={playbackSpeed}
-                      onChange={(e) => handleSpeedChange(Number(e.target.value))}
-                      className="sm:hidden px-2 py-1 bg-slate-800 text-slate-200 rounded-lg text-xs border border-slate-700"
+                    {/* Bottom Floating Controls inside Video Stage (Supports Fullscreen & Normal Screen) */}
+                    <div
+                      className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-3 sm:p-4 z-30 transition-opacity duration-300 ${
+                        showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+                      }`}
                     >
-                      {SPEED_OPTIONS.map((speed) => (
-                        <option key={speed} value={speed}>{speed}x</option>
-                      ))}
-                    </select>
-                    <div className="hidden sm:flex gap-1">
-                      {SPEED_OPTIONS.map((speed) => (
-                        <button
-                          key={speed}
-                          onClick={() => handleSpeedChange(speed)}
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                            playbackSpeed === speed
-                              ? "bg-purple-600 text-white shadow-sm"
-                              : "bg-slate-800 text-slate-400 hover:text-white"
-                          }`}
-                        >
-                          {speed}x
-                        </button>
-                      ))}
+                      {/* Interactive Progress / Seek Bar */}
+                      {(() => {
+                        const effDur = getEffectiveDuration();
+                        const displayTime = isSeeking ? seekValue : currentTime;
+                        const progressPercent = effDur > 0 ? Math.min(100, Math.max(0, (displayTime / effDur) * 100)) : 0;
+                        return (
+                          <div
+                            ref={progressBarRef}
+                            className="mb-2.5 relative group/bar cursor-pointer select-none py-1.5"
+                            onMouseMove={handleProgressMouseMove}
+                            onMouseLeave={() => setHoverTime(null)}
+                            onClick={handleProgressClick}
+                          >
+                            {/* Hover Time Tooltip */}
+                            {hoverTime !== null && (
+                              <div
+                                className="absolute -top-7 px-2 py-0.5 bg-slate-900/95 text-white text-[11px] font-mono rounded-md shadow-lg border border-slate-700 pointer-events-none transform -translate-x-1/2 transition-opacity z-40"
+                                style={{ left: `${hoverX}px` }}
+                              >
+                                {formatTime(hoverTime)}
+                              </div>
+                            )}
+
+                            {/* Track Background */}
+                            <div className="w-full h-1.5 group-hover/bar:h-2.5 bg-slate-700/80 rounded-full overflow-hidden transition-all duration-150 relative">
+                              <div
+                                className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full pointer-events-none transition-all duration-75"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+
+                            {/* Scrubber Knob Thumb */}
+                            <div
+                              className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md border-2 border-blue-500 pointer-events-none transition-all duration-75 group-hover/bar:scale-125 z-30"
+                              style={{ left: `calc(${progressPercent}% - 7px)` }}
+                            />
+
+                            {/* Range Input Overlay for Drag / Touch Seeking */}
+                            <input
+                              type="range"
+                              min={0}
+                              max={effDur > 0 ? effDur : 100}
+                              step="any"
+                              value={effDur > 0 ? displayTime : 0}
+                              onMouseDown={() => setIsSeeking(true)}
+                              onTouchStart={() => setIsSeeking(true)}
+                              onChange={handleSeekChange}
+                              onMouseUp={handleSeekEnd}
+                              onTouchEnd={handleSeekEnd}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                            />
+                          </div>
+                        );
+                      })()}
+
+                      {/* Controls Row */}
+                      <div className="flex items-center justify-between text-white text-xs gap-2">
+                        {/* Left Controls: Play, Skip, Time, Volume */}
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <button
+                            onClick={togglePlay}
+                            className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg text-white transition-colors cursor-pointer"
+                            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+                          >
+                            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white" />}
+                          </button>
+
+                          {/* 10s Rewind */}
+                          <button
+                            onClick={() => skipTime(-10)}
+                            className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors flex items-center gap-0.5 font-semibold text-[11px] cursor-pointer"
+                            title="Rewind 10 seconds"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            <span className="hidden xs:inline">-10s</span>
+                          </button>
+
+                          {/* 10s Fast-Forward */}
+                          <button
+                            onClick={() => skipTime(10)}
+                            className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors flex items-center gap-0.5 font-semibold text-[11px] cursor-pointer"
+                            title="Forward 10 seconds"
+                          >
+                            <RotateCw className="w-4 h-4" />
+                            <span className="hidden xs:inline">+10s</span>
+                          </button>
+
+                          {/* Live Time Display */}
+                          <div className="text-slate-300 font-mono text-[11px] sm:text-xs select-none ml-1">
+                            <span className="text-white font-semibold">
+                              {formatTime(isSeeking ? seekValue : currentTime)}
+                            </span>
+                            <span className="text-slate-500 mx-1">/</span>
+                            <span className="text-slate-400">
+                              {formatTime(getEffectiveDuration())}
+                            </span>
+                          </div>
+
+                          {/* Volume Controls */}
+                          <div className="hidden sm:flex items-center gap-1.5 ml-2">
+                            <button
+                              onClick={toggleMute}
+                              className="p-1 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                              title={isMuted ? "Unmute" : "Mute"}
+                            >
+                              {isMuted || volume === 0 ? (
+                                <VolumeX className="w-4 h-4 text-red-400" />
+                              ) : (
+                                <Volume2 className="w-4 h-4" />
+                              )}
+                            </button>
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={isMuted ? 0 : volume}
+                              onChange={handleVolumeChange}
+                              className="w-16 h-1 bg-slate-700 accent-blue-500 rounded cursor-pointer"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Right Controls: Speed & Fullscreen */}
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          {/* Speed Selector */}
+                          <div className="flex items-center gap-1 bg-slate-800/80 px-1.5 py-0.5 rounded-lg border border-slate-700">
+                            <Gauge className="w-3.5 h-3.5 text-purple-400 shrink-0 hidden sm:inline" />
+                            <select
+                              value={playbackSpeed}
+                              onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                              aria-label="Playback Speed"
+                              className="bg-transparent text-[11px] font-semibold text-slate-200 focus:outline-none cursor-pointer"
+                            >
+                              {SPEED_OPTIONS.map((speed) => (
+                                <option key={speed} value={speed} className="bg-slate-900 text-white">
+                                  {speed}x
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Fullscreen Button */}
+                          <button
+                            onClick={toggleFullscreen}
+                            className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
+                            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                          >
+                            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="text-[11px] sm:text-xs text-slate-500 font-mono text-center sm:text-right">
-                  HD Recording • Ready to Watch
-                </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

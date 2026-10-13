@@ -650,6 +650,8 @@ const LiveStudioStage = ({
   const [docFitMode, setDocFitMode] = useState("page"); // 'page' | 'width'
   const [docZoom, setDocZoom] = useState(1);
   const [showPipVideo, setShowPipVideo] = useState(true);
+  const showPipVideoRef = useRef(showPipVideo);
+  showPipVideoRef.current = showPipVideo;
   const docInputRef = useRef(null);
   const cachedPdfDocRef = useRef(null);
   const cachedImgRef = useRef(null);
@@ -2364,12 +2366,14 @@ const LiveStudioStage = ({
           cCtx.drawImage(wb, drawX, drawY, drawW, drawH);
         }
 
-        // Corner PiP for Tutor
-        const pw = 250;
-        const ph = 145;
-        const px = 1280 - pw - 20;
-        const py = 720 - ph - 20;
-        drawParticipantTile(cCtx, allParticipants[0], px, py, pw, ph, timeNow);
+        // Corner PiP for Tutor (only when camera is turned on and not hidden)
+        if (isCameraEnabledRef.current && showPipVideoRef.current && allParticipants[0]) {
+          const pw = 250;
+          const ph = 145;
+          const px = 1280 - pw - 20;
+          const py = 720 - ph - 20;
+          drawParticipantTile(cCtx, allParticipants[0], px, py, pw, ph, timeNow);
+        }
       } else {
         // Mode B: DYNAMIC VIRTUAL CLASSROOM GRID STAGE (Records Full Attendees Grid View)
         // 1. Studio Stage Background (Deep rich gradient, NEVER flat black)
