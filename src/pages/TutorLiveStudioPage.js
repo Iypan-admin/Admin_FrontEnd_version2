@@ -630,6 +630,7 @@ const LiveStudioStage = ({
   const [boardTheme, setBoardTheme] = useState("light"); // "light" (Paper Grid) | "dark" (Blackboard)
   const [remoteWhiteboardUrl, setRemoteWhiteboardUrl] = useState(null);
   const lastWhiteboardSyncPayloadRef = useRef(null);
+  const incomingWhiteboardChunksRef = useRef({});
   const [isDrawing, setIsDrawing] = useState(false);
   const startPosRef = useRef({ x: 0, y: 0 });
   const snapshotRef = useRef(null);
@@ -1735,6 +1736,43 @@ const LiveStudioStage = ({
     broadcastWhiteboardState({ docInfo: null });
   };
 
+  // Safely publish data via LiveKit, chunking if payload exceeds safe size (~32KB per chunk)
+  const safePublishData = (dataObj) => {
+    try {
+      if (!room || room.state !== "connected" || !room.localParticipant) return;
+      const jsonStr = JSON.stringify(dataObj);
+      const encoder = new TextEncoder();
+      const rawBytes = encoder.encode(jsonStr);
+
+      // WebRTC safe packet limit is 64KB, keep chunks around 32KB for absolute reliability across mobile & desktop
+      const MAX_CHUNK_BYTES = 32000;
+      if (rawBytes.length <= MAX_CHUNK_BYTES) {
+        room.localParticipant.publishData(rawBytes, { reliable: true }).catch((e) => console.warn("publishData error:", e));
+        return;
+      }
+
+      // Chunk large payload
+      const syncId = `wb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const chunkSize = 28000; // character slice size
+      const totalChunks = Math.ceil(jsonStr.length / chunkSize);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunkPart = jsonStr.slice(i * chunkSize, (i + 1) * chunkSize);
+        const chunkMsg = JSON.stringify({
+          type: "WHITEBOARD_CHUNK",
+          syncId,
+          index: i,
+          total: totalChunks,
+          chunk: chunkPart
+        });
+        const chunkBytes = encoder.encode(chunkMsg);
+        room.localParticipant.publishData(chunkBytes, { reliable: true }).catch((e) => console.warn("publishData chunk error:", e));
+      }
+    } catch (err) {
+      console.warn("safePublishData error:", err);
+    }
+  };
+
   // Whiteboard Real-Time Broadcaster to Room Data Channel (Safe transmission under 64KB WebRTC packet limits)
   const broadcastWhiteboardState = (override = {}) => {
     try {
@@ -1763,16 +1801,16 @@ const LiveStudioStage = ({
           } catch (_) {}
         }
       }
-      const payload = JSON.stringify({
+      const payloadObj = {
         type: "WHITEBOARD_SYNC",
         activeTab,
         boardTheme,
         dataUrl,
         docInfo: presentedDocRef.current,
         ...override
-      });
-      lastWhiteboardSyncPayloadRef.current = payload;
-      room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+      };
+      lastWhiteboardSyncPayloadRef.current = JSON.stringify(payloadObj);
+      safePublishData(payloadObj);
     } catch (err) {
       console.warn("Whiteboard broadcast error:", err);
     }
@@ -1854,7 +1892,9 @@ const LiveStudioStage = ({
         if (decoded.type === "REQUEST_SYNC") {
           // Send cached state immediately without waiting for canvas redraw
           if (lastWhiteboardSyncPayloadRef.current && room.localParticipant) {
-            room.localParticipant.publishData(new TextEncoder().encode(lastWhiteboardSyncPayloadRef.current), { reliable: true }).catch(() => {});
+            try {
+              safePublishData(JSON.parse(lastWhiteboardSyncPayloadRef.current));
+            } catch (_) {}
           }
           // Also fresh broadcast from canvas if available
           broadcastWhiteboardState();
@@ -1867,7 +1907,9 @@ const LiveStudioStage = ({
       console.log("[LiveStudio] New attendee joined room:", participant?.identity);
       setTimeout(() => {
         if (lastWhiteboardSyncPayloadRef.current && room.localParticipant) {
-          room.localParticipant.publishData(new TextEncoder().encode(lastWhiteboardSyncPayloadRef.current), { reliable: true }).catch(() => {});
+          try {
+            safePublishData(JSON.parse(lastWhiteboardSyncPayloadRef.current));
+          } catch (_) {}
         }
         broadcastWhiteboardState();
       }, 500);
@@ -2615,20 +2657,51 @@ const LiveStudioStage = ({
           });
         }
 
+        // Handle incoming chunked Whiteboard data
+        let syncPayload = data;
+        if (data.type === "WHITEBOARD_CHUNK") {
+          const { syncId, index, total, chunk } = data;
+          if (syncId && typeof index === "number" && total) {
+            if (!incomingWhiteboardChunksRef.current[syncId]) {
+              incomingWhiteboardChunksRef.current[syncId] = {
+                chunks: new Array(total).fill(null),
+                timer: setTimeout(() => {
+                  delete incomingWhiteboardChunksRef.current[syncId];
+                }, 15000)
+              };
+            }
+            const record = incomingWhiteboardChunksRef.current[syncId];
+            record.chunks[index] = chunk;
+            if (record.chunks.every((c) => c !== null)) {
+              clearTimeout(record.timer);
+              try {
+                syncPayload = JSON.parse(record.chunks.join(""));
+              } catch (e) {
+                console.warn("Failed to parse reassembled whiteboard chunk payload:", e);
+                syncPayload = null;
+              }
+              delete incomingWhiteboardChunksRef.current[syncId];
+            } else {
+              // Waiting for remaining chunks
+              return;
+            }
+          }
+        }
+
         // Whiteboard Live Synchronization for Observers (Academic Manager / Viewers)
-        if (data.type === "WHITEBOARD_SYNC") {
-          if (data.dataUrl) {
-            setRemoteWhiteboardUrl(data.dataUrl);
+        if (syncPayload && syncPayload.type === "WHITEBOARD_SYNC") {
+          if (syncPayload.dataUrl) {
+            setRemoteWhiteboardUrl(syncPayload.dataUrl);
           }
-          if (data.docInfo !== undefined) {
-            setPresentedDoc(data.docInfo);
-            presentedDocRef.current = data.docInfo;
+          if (syncPayload.docInfo !== undefined) {
+            setPresentedDoc(syncPayload.docInfo);
+            presentedDocRef.current = syncPayload.docInfo;
           }
-          if (data.boardTheme) {
-            setBoardTheme(data.boardTheme);
+          if (syncPayload.boardTheme) {
+            setBoardTheme(syncPayload.boardTheme);
           }
-          if (isAcademic && data.activeTab) {
-            setActiveTab(data.activeTab);
+          if (isAcademic && syncPayload.activeTab) {
+            setActiveTab(syncPayload.activeTab);
           }
         }
       } catch (err) {
