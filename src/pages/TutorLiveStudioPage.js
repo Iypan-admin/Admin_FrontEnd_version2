@@ -124,28 +124,47 @@ const getParticipantRole = (p) => {
 const CameraStreamVideo = ({ trackRef, participant, isLocal = false, className = "w-full h-full object-cover" }) => {
   const videoRef = useRef(null);
 
+  const currentTrackIdRef = useRef(null);
+
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     const mediaTrack =
       trackRef?.publication?.track ||
       trackRef?.track ||
+      participant?.getTrackPublication(Track.Source.ScreenShare)?.track ||
       participant?.getTrackPublication(Track.Source.Camera)?.track;
 
-    if (mediaTrack) {
-      mediaTrack.attach(el);
-      if (el.paused) {
-        el.play().catch(() => {});
+    const trackId = mediaTrack?.sid || mediaTrack?.mediaStreamTrack?.id || null;
+
+    if (mediaTrack && trackId) {
+      if (currentTrackIdRef.current !== trackId || !el.srcObject) {
+        currentTrackIdRef.current = trackId;
+        if (typeof mediaTrack.attach === "function") {
+          mediaTrack.attach(el);
+        } else if (mediaTrack.mediaStreamTrack) {
+          el.srcObject = new MediaStream([mediaTrack.mediaStreamTrack]);
+        }
+        if (el.paused) {
+          el.play().catch(() => {});
+        }
       }
-      return () => {
-        try {
-          mediaTrack.detach(el);
-        } catch (_) {}
-      };
     } else {
-      el.srcObject = null;
+      if (currentTrackIdRef.current) {
+        currentTrackIdRef.current = null;
+        el.srcObject = null;
+      }
     }
-  }, [trackRef, participant]);
+  }, [trackRef?.publication?.track?.sid, trackRef?.publication?.track?.mediaStreamTrack?.id, participant]);
+
+  useEffect(() => {
+    return () => {
+      const el = videoRef.current;
+      if (el) {
+        el.srcObject = null;
+      }
+    };
+  }, []);
 
   return (
     <video
