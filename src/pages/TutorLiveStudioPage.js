@@ -879,8 +879,16 @@ const LiveStudioStage = ({
   useEffect(() => {
     if (!localParticipant || !audioContextRef.current || !masterGainRef.current) return;
 
-    // Mute microphone by default upon entry so tutor and manager start silent and can unmute on demand
-    // (Local participant stays muted until user clicks the mic button)
+    // For Tutor (Instructor), automatically activate microphone on entry so students hear immediately!
+    if (isTeacher) {
+      localParticipant.setMicrophoneEnabled(true, {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 48000,
+        channelCount: 1
+      }).catch((e) => console.warn("Auto-unmute mic note:", e));
+    }
 
     const syncLocalMic = () => {
       try {
@@ -2544,48 +2552,10 @@ const LiveStudioStage = ({
 
   // Reactive synchronization of camera video elements whenever tracks or camera toggles update
   useEffect(() => {
-    if (cameraVideoElRef.current) {
-      const localCamPub = localParticipant.getTrackPublication(Track.Source.Camera);
-      const localTrack =
-        localCamPub?.track ||
-        tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.publication?.track ||
-        tracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera)?.track;
-
-      if (isCameraEnabled && localTrack) {
-        if (typeof localTrack.attach === "function") {
-          localTrack.attach(cameraVideoElRef.current);
-        } else if (localTrack.mediaStreamTrack) {
-          cameraVideoElRef.current.srcObject = new MediaStream([localTrack.mediaStreamTrack]);
-        }
-        if (cameraVideoElRef.current.paused) {
-          cameraVideoElRef.current.play().catch(() => {});
-        }
-      } else if (!isCameraEnabled && cameraVideoElRef.current.srcObject) {
-        cameraVideoElRef.current.srcObject = null;
-      }
+    if (!isCameraEnabled && cameraVideoElRef.current?.srcObject) {
+      cameraVideoElRef.current.srcObject = null;
     }
-
-    remoteParticipants.forEach((p) => {
-      const rEl = remoteVideoElsRef.current[p.identity];
-      if (!rEl) return;
-      const pTrack = tracks.find((t) => t.participant.identity === p.identity && t.source === Track.Source.Camera);
-      const track = p.getTrackPublication(Track.Source.Camera)?.track || pTrack?.publication?.track || pTrack?.track;
-      const isCamOn = !!(p.isCameraEnabled || (pTrack && !pTrack.publication?.isMuted) || track);
-
-      if (isCamOn && track) {
-        if (typeof track.attach === "function") {
-          track.attach(rEl);
-        } else if (track.mediaStreamTrack) {
-          rEl.srcObject = new MediaStream([track.mediaStreamTrack]);
-        }
-        if (rEl.paused) {
-          rEl.play().catch(() => {});
-        }
-      } else if (!isCamOn && rEl.srcObject) {
-        rEl.srcObject = null;
-      }
-    });
-  }, [tracks, isCameraEnabled, remoteParticipants, localParticipant]);
+  }, [isCameraEnabled]);
 
   // Comprehensive Room Data Channel Listener (Chat, Hand Raise, Hand Lower, Class Ended)
   useEffect(() => {
